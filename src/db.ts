@@ -44,6 +44,21 @@ db.exec(`
     timestamp INTEGER NOT NULL,
     details TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS scheduled_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipient_id TEXT NOT NULL,
+    recipient_name TEXT,
+    message_text TEXT NOT NULL,
+    scheduled_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    sent_at INTEGER,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_scheduled_status_time
+    ON scheduled_messages(status, scheduled_at);
 `);
 
 export interface Group {
@@ -203,6 +218,72 @@ export function getConnectionGaps(hoursBack: number = 24): { start: number; end:
   }
 
   return gaps;
+}
+
+// Scheduled messages
+export interface ScheduledMessage {
+  id: number;
+  recipient_id: string;
+  recipient_name: string | null;
+  message_text: string;
+  scheduled_at: number;
+  created_at: number;
+  sent_at: number | null;
+  status: 'pending' | 'sent' | 'failed';
+  error: string | null;
+}
+
+const insertScheduledMessage = db.prepare(`
+  INSERT INTO scheduled_messages (recipient_id, recipient_name, message_text, scheduled_at, created_at, status)
+  VALUES (?, ?, ?, ?, ?, 'pending')
+`);
+
+export function scheduleMessage(
+  recipientId: string,
+  recipientName: string | null,
+  messageText: string,
+  scheduledAt: Date
+): number {
+  const result = insertScheduledMessage.run(
+    recipientId,
+    recipientName,
+    messageText,
+    scheduledAt.getTime(),
+    Date.now()
+  );
+  return result.lastInsertRowid as number;
+}
+
+export function getDueMessages(): ScheduledMessage[] {
+  return db.prepare(`
+    SELECT * FROM scheduled_messages
+    WHERE status = 'pending' AND scheduled_at <= ?
+    ORDER BY scheduled_at ASC
+  `).all(Date.now()) as ScheduledMessage[];
+}
+
+export function markMessageSent(id: number): void {
+  db.prepare(`
+    UPDATE scheduled_messages
+    SET status = 'sent', sent_at = ?
+    WHERE id = ?
+  `).run(Date.now(), id);
+}
+
+export function markMessageFailed(id: number, error: string): void {
+  db.prepare(`
+    UPDATE scheduled_messages
+    SET status = 'failed', error = ?
+    WHERE id = ?
+  `).run(error, id);
+}
+
+export function getPendingMessages(): ScheduledMessage[] {
+  return db.prepare(`
+    SELECT * FROM scheduled_messages
+    WHERE status = 'pending'
+    ORDER BY scheduled_at ASC
+  `).all() as ScheduledMessage[];
 }
 
 export { db };

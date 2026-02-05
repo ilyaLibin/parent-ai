@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { connectToWhatsApp } from './connection.js';
 import { setupMessageListener } from './listener.js';
 import { startServer, setSocket } from './server.js';
+import { setupAgentListener } from './agent.js';
+import { startScheduler } from './scheduler.js';
 
 console.log(`
 ╔═══════════════════════════════════════════════════╗
@@ -22,6 +24,8 @@ async function main() {
         // Make socket available to API server
         setSocket(sock);
         setupMessageListener(sock);
+        setupAgentListener(sock);
+        startScheduler();
 
         console.log('\n🎯 Ready! Messages from tracked groups will be stored.\n');
         console.log('Commands:');
