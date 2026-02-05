@@ -8,7 +8,11 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
-    "summarize": "tsx src/cli.ts summarize"
+    "summarize": "tsx src/cli.ts summarize",
+    "send": "tsx src/cli.ts send",
+    "discover": "tsx src/cli.ts discover",
+    "groups": "tsx src/cli.ts groups",
+    "status": "tsx src/cli.ts status"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

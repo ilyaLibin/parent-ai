@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Command } from 'commander';
 import { summarizeGroup, formatSummaryForDisplay } from './summarize.js';
 import { getGroups, getMessageCount, getConnectionGaps, saveGroup } from './db.js';
+import { sendMessage, phoneToJid, disconnect } from './send.js';
 import makeWASocket, {
   useMultiFileAuthState,
   makeCacheableSignalKeyStore,
@@ -92,6 +93,42 @@ program
     console.log(`  📱 Groups being tracked: ${groups.length}`);
     const totalMessages = groups.reduce((sum, g) => sum + getMessageCount(g.id), 0);
     console.log(`  💬 Total messages stored: ${totalMessages}\n`);
+  });
+
+program
+  .command('send')
+  .description('Send a message to a contact or group')
+  .requiredOption('-t, --to <recipient>', 'Recipient: phone number, contact JID, or group ID')
+  .requiredOption('-m, --message <text>', 'Message text to send')
+  .action(async (options) => {
+    try {
+      // Determine recipient JID
+      let recipientId = options.to;
+
+      // If it doesn't look like a JID, assume it's a phone number
+      if (!recipientId.includes('@')) {
+        recipientId = phoneToJid(recipientId);
+        console.log(`📱 Resolved phone to: ${recipientId}`);
+      }
+
+      console.log(`\n📤 Sending message to ${recipientId}...`);
+
+      const result = await sendMessage(recipientId, options.message);
+
+      if (result.success) {
+        console.log(`✅ Message sent successfully!`);
+        console.log(`   Message ID: ${result.messageId}`);
+      } else {
+        console.error(`❌ Failed to send: ${result.error}`);
+        process.exit(1);
+      }
+
+      await disconnect();
+      process.exit(0);
+    } catch (error) {
+      console.error('Error:', error);
+      process.exit(1);
+    }
   });
 
 program
