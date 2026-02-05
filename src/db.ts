@@ -111,6 +111,18 @@ export function getGroupByName(name: string): Group | undefined {
   ).get(`%${name}%`) as Group | undefined;
 }
 
+export function getGroupById(id: string): Group | undefined {
+  return db.prepare('SELECT * FROM groups WHERE id = ?').get(id) as Group | undefined;
+}
+
+// Resolve group by ID or name - ID takes precedence if it looks like a group ID
+export function resolveGroup(identifier: string): Group | undefined {
+  if (identifier.endsWith('@g.us')) {
+    return getGroupById(identifier);
+  }
+  return getGroupByName(identifier);
+}
+
 export function getMessages(
   groupId: string,
   startTime: number,
@@ -137,6 +149,20 @@ export function getMessagesByGroupName(
       AND m.timestamp >= ? AND m.timestamp <= ?
     ORDER BY m.timestamp ASC
   `).all(`%${groupName}%`, startTime, endTime) as Message[];
+}
+
+// Get messages by group identifier (ID or name)
+export function getMessagesByGroup(
+  identifier: string,
+  startTime: number,
+  endTime: number
+): { group: Group | undefined; messages: Message[] } {
+  const group = resolveGroup(identifier);
+  if (!group) {
+    return { group: undefined, messages: [] };
+  }
+  const messages = getMessages(group.id, startTime, endTime);
+  return { group, messages };
 }
 
 export function getMessageCount(groupId: string): number {

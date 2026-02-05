@@ -1,25 +1,23 @@
 import makeWASocket, {
   useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
+  fetchLatestBaileysVersion,
   DisconnectReason,
   WASocket,
   ConnectionState,
-  makeInMemoryStore,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import { mkdirSync } from 'fs';
+import qrcode from 'qrcode-terminal';
 import { logConnectionEvent } from './db.js';
 
 const AUTH_DIR = './auth_state';
 const logger = pino({ level: 'warn' });
 
-// In-memory store for contacts/chats (optional but helpful for names)
-const store = makeInMemoryStore({ logger });
-
 export interface ConnectionCallbacks {
   onConnected?: (sock: WASocket) => void;
   onDisconnected?: (reason: string) => void;
-  onMessage?: Parameters<WASocket['ev']['on']>[1];
 }
 
 let sock: WASocket | null = null;
@@ -31,16 +29,18 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
-  sock = makeWASocket({
-    auth: state,
-    logger,
-    printQRInTerminal: true,
-    // getMessage is needed for message retries
-    getMessage: async () => undefined,
-  });
+  // Fetch latest WA Web version
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  console.log(`📱 Using WA Web version: ${version.join('.')}${isLatest ? ' (latest)' : ''}`);
 
-  // Bind store to socket events
-  store.bind(sock.ev);
+  sock = makeWASocket({
+    version,
+    logger,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, logger),
+    },
+  });
 
   // Save credentials when updated
   sock.ev.on('creds.update', saveCreds);
@@ -50,7 +50,8 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log('\n📱 Scan the QR code above with WhatsApp to link this device\n');
+      console.log('\n📱 Scan the QR code below with WhatsApp to link this device:\n');
+      qrcode.generate(qr, { small: true });
     }
 
     if (connection === 'close') {
@@ -92,8 +93,4 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
 
 export function getSocket(): WASocket | null {
   return sock;
-}
-
-export function getStore() {
-  return store;
 }

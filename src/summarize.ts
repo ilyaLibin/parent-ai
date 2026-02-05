@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { getMessagesByGroupName, getConnectionGaps, Message } from './db.js';
+import { getMessagesByGroup, getConnectionGaps, Message } from './db.js';
 
 const anthropic = new Anthropic();
 
@@ -14,23 +14,25 @@ export interface SummaryResult {
 }
 
 export async function summarizeGroup(
-  groupName: string,
+  groupIdentifier: string,
   startTime: Date,
   endTime: Date
 ): Promise<SummaryResult> {
-  // Fetch messages from database
-  const messages = getMessagesByGroupName(
-    groupName,
+  // Fetch messages from database (supports both ID and name)
+  const { group, messages } = getMessagesByGroup(
+    groupIdentifier,
     startTime.getTime(),
     endTime.getTime()
   );
 
-  if (messages.length === 0) {
+  const groupName = group?.name || groupIdentifier;
+
+  if (!group || messages.length === 0) {
     return {
       groupName,
       period: { start: startTime, end: endTime },
       messageCount: 0,
-      summary: 'No messages found in this period.',
+      summary: group ? 'No messages found in this period.' : `Group not found: ${groupIdentifier}`,
       actionItems: [],
       keyTopics: [],
       gaps: [],

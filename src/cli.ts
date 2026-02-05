@@ -1,7 +1,13 @@
 import 'dotenv/config';
 import { Command } from 'commander';
 import { summarizeGroup, formatSummaryForDisplay } from './summarize.js';
-import { getGroups, getMessageCount, getConnectionGaps } from './db.js';
+import { getGroups, getMessageCount, getConnectionGaps, saveGroup } from './db.js';
+import makeWASocket, {
+  useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
+  fetchLatestBaileysVersion,
+} from '@whiskeysockets/baileys';
+import pino from 'pino';
 
 const program = new Command();
 
@@ -13,7 +19,7 @@ program
 program
   .command('summarize')
   .description('Generate a summary for a group')
-  .requiredOption('-g, --group <name>', 'Group name (partial match)')
+  .requiredOption('-g, --group <id-or-name>', 'Group ID (e.g., 120363...@g.us) or name (partial match)')
   .option('-p, --period <period>', 'Time period: day, week, or custom', 'day')
   .option('--from <date>', 'Start date (YYYY-MM-DD or ISO)')
   .option('--to <date>', 'End date (YYYY-MM-DD or ISO)')
@@ -86,6 +92,66 @@ program
     console.log(`  📱 Groups being tracked: ${groups.length}`);
     const totalMessages = groups.reduce((sum, g) => sum + getMessageCount(g.id), 0);
     console.log(`  💬 Total messages stored: ${totalMessages}\n`);
+  });
+
+program
+  .command('discover')
+  .description('Connect to WhatsApp and list all groups you are a member of')
+  .action(async () => {
+    console.log('\n🔍 Connecting to discover groups...\n');
+
+    const { state, saveCreds } = await useMultiFileAuthState('./auth_state');
+    const { version } = await fetchLatestBaileysVersion();
+    const logger = pino({ level: 'silent' });
+
+    const sock = makeWASocket({
+      version,
+      logger,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger),
+      },
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', async (update) => {
+      if (update.connection === 'open') {
+        console.log('✅ Connected! Fetching groups...\n');
+
+        try {
+          // Get all groups
+          const groups = await sock.groupFetchAllParticipating();
+          const groupList = Object.values(groups);
+
+          console.log(`Found ${groupList.length} groups:\n`);
+          console.log('─'.repeat(70));
+
+          for (const group of groupList) {
+            // Save to DB for later reference
+            saveGroup(group.id, group.subject);
+
+            console.log(`📱 ${group.subject}`);
+            console.log(`   ID: ${group.id}`);
+            console.log(`   Participants: ${group.participants.length}`);
+            console.log('─'.repeat(70));
+          }
+
+          console.log('\n💡 Add group names (or unique substrings) to TRACKED_GROUPS in .env:');
+          console.log('   TRACKED_GROUPS=שומרים על קשר,כיתה ב1\n');
+
+          process.exit(0);
+        } catch (err) {
+          console.error('Error fetching groups:', err);
+          process.exit(1);
+        }
+      }
+
+      if (update.connection === 'close') {
+        console.error('❌ Connection closed before fetching groups');
+        process.exit(1);
+      }
+    });
   });
 
 function parsePeriod(

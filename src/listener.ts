@@ -1,8 +1,13 @@
-import { WASocket, proto, jidNormalizedUser } from '@whiskeysockets/baileys';
+import { WASocket, proto } from '@whiskeysockets/baileys';
 import { saveMessage, saveGroup, Message } from './db.js';
-import { getStore } from './connection.js';
 
-// Load tracked groups from env (comma-separated, case-insensitive partial match)
+// Load tracked groups from env
+// Prefer TRACKED_GROUP_IDS (exact match by ID) over TRACKED_GROUPS (name substring match)
+const TRACKED_GROUP_IDS = (process.env.TRACKED_GROUP_IDS || '')
+  .split(',')
+  .map(id => id.trim())
+  .filter(Boolean);
+
 const TRACKED_GROUPS = (process.env.TRACKED_GROUPS || '')
   .split(',')
   .map(g => g.trim().toLowerCase())
@@ -11,11 +16,13 @@ const TRACKED_GROUPS = (process.env.TRACKED_GROUPS || '')
 interface GroupMetadata {
   id: string;
   subject: string;
+  participants: Map<string, string>; // jid -> pushName/notify
 }
 
 const groupCache = new Map<string, GroupMetadata>();
 
 export function setupMessageListener(sock: WASocket): void {
+  // Real-time and synced messages
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     // type: 'notify' = real-time, 'append' = historical sync
     const isHistorical = type === 'append';
@@ -25,28 +32,49 @@ export function setupMessageListener(sock: WASocket): void {
     }
   });
 
+  // Capture initial history sync (when device is first linked)
+  sock.ev.on('messaging-history.set', async ({ messages, isLatest }) => {
+    console.log(`\n📜 Receiving history sync (${messages.length} messages, isLatest: ${isLatest})...`);
+    let saved = 0;
+    for (const msg of messages) {
+      const wasNew = await processMessage(sock, msg, true);
+      if (wasNew) saved++;
+    }
+    console.log(`\n✅ History sync complete: ${saved} new messages saved`);
+  });
+
   // Also listen for group metadata updates
   sock.ev.on('groups.update', (updates) => {
     for (const update of updates) {
       if (update.id && update.subject) {
-        groupCache.set(update.id, { id: update.id, subject: update.subject });
+        const existing = groupCache.get(update.id);
+        groupCache.set(update.id, {
+          id: update.id,
+          subject: update.subject,
+          participants: existing?.participants || new Map(),
+        });
         saveGroup(update.id, update.subject);
       }
     }
   });
 
-  console.log(`👂 Listening for messages in groups: ${TRACKED_GROUPS.length > 0 ? TRACKED_GROUPS.join(', ') : '(all groups)'}`);
+  const trackingInfo = TRACKED_GROUP_IDS.length > 0
+    ? `${TRACKED_GROUP_IDS.length} group(s) by ID`
+    : TRACKED_GROUPS.length > 0
+      ? TRACKED_GROUPS.join(', ')
+      : '(all groups)';
+  console.log(`👂 Listening for messages in: ${trackingInfo}`);
 }
 
 async function processMessage(
   sock: WASocket,
   msg: proto.IWebMessageInfo,
   isHistorical: boolean
-): Promise<void> {
+): Promise<boolean> {
   // Skip if not a group message
   const remoteJid = msg.key?.remoteJid;
   if (!remoteJid || !remoteJid.endsWith('@g.us')) {
-    return;
+    return false;
   }
 
   // Get group metadata
@@ -54,21 +82,38 @@ async function processMessage(
   if (!groupMeta) {
     try {
       const metadata = await sock.groupMetadata(remoteJid);
-      groupMeta = { id: remoteJid, subject: metadata.subject };
+      const participants = new Map<string, string>();
+      for (const p of metadata.participants) {
+        if (p.id) {
+          // Use notify name or phone number
+          participants.set(p.id, p.id.split('@')[0]);
+        }
+      }
+      groupMeta = {
+        id: remoteJid,
+        subject: metadata.subject,
+        participants,
+      };
       groupCache.set(remoteJid, groupMeta);
       saveGroup(remoteJid, metadata.subject);
     } catch (err) {
       console.warn(`⚠️ Could not fetch group metadata for ${remoteJid}`);
-      return;
+      return false;
     }
   }
 
   // Check if this group should be tracked
-  if (TRACKED_GROUPS.length > 0) {
-    const groupNameLower = groupMeta.subject.toLowerCase();
-    const isTracked = TRACKED_GROUPS.some(pattern => groupNameLower.includes(pattern));
-    if (!isTracked) {
-      return;
+  const hasIdFilter = TRACKED_GROUP_IDS.length > 0;
+  const hasNameFilter = TRACKED_GROUPS.length > 0;
+
+  if (hasIdFilter || hasNameFilter) {
+    const matchesId = hasIdFilter && TRACKED_GROUP_IDS.includes(remoteJid);
+    const matchesName = hasNameFilter && TRACKED_GROUPS.some(
+      pattern => groupMeta.subject.toLowerCase().includes(pattern)
+    );
+
+    if (!matchesId && !matchesName) {
+      return false;
     }
   }
 
@@ -78,12 +123,20 @@ async function processMessage(
 
   // Skip non-text messages for now (can expand later)
   if (!content && messageType === 'unknown') {
-    return;
+    return false;
   }
 
   // Get sender info
   const senderId = msg.key?.participant || msg.key?.remoteJid || 'unknown';
-  const senderName = await getSenderName(sock, senderId);
+
+  // Try to get sender name from message pushName, then cache, then phone number
+  let senderName = msg.pushName || null;
+  if (!senderName) {
+    senderName = groupMeta.participants.get(senderId) || senderId.split('@')[0];
+  } else {
+    // Update cache with pushName
+    groupMeta.participants.set(senderId, senderName);
+  }
 
   // Build message record
   const messageRecord: Message & { raw_json: string } = {
@@ -107,6 +160,8 @@ async function processMessage(
     // Silently log historical syncs
     process.stdout.write('.');
   }
+
+  return isNew;
 }
 
 function extractMessageContent(msg: proto.IWebMessageInfo): string | null {
@@ -144,18 +199,4 @@ function getMessageType(msg: proto.IWebMessageInfo): string {
   if (m.locationMessage) return 'location';
 
   return 'unknown';
-}
-
-async function getSenderName(sock: WASocket, senderId: string): Promise<string> {
-  const store = getStore();
-
-  // Try to get from store contacts
-  const normalizedId = jidNormalizedUser(senderId);
-  const contact = store.contacts[normalizedId];
-
-  if (contact?.name) return contact.name;
-  if (contact?.notify) return contact.notify;
-
-  // Fallback to phone number
-  return senderId.split('@')[0];
 }
