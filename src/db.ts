@@ -9,6 +9,9 @@ mkdirSync(dirname(DB_PATH), { recursive: true });
 
 const db = new Database(DB_PATH);
 
+// Enable WAL mode for better concurrent read/write performance
+db.pragma('journal_mode = WAL');
+
 // Initialize schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS groups (
