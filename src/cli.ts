@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { Command } from 'commander';
 import { summarizeGroup, formatSummaryForDisplay } from './summarize.js';
 import { getGroups, getMessageCount, getConnectionGaps, saveGroup } from './db.js';
-import { sendMessage, phoneToJid, disconnect } from './send.js';
+import * as api from './api-client.js';
 import makeWASocket, {
   useMultiFileAuthState,
   makeCacheableSignalKeyStore,
@@ -62,6 +62,7 @@ program
       const count = getMessageCount(group.id);
       const lastUpdate = new Date(group.updated_at).toLocaleString();
       console.log(`  • ${group.name}`);
+      console.log(`    ID: ${group.id}`);
       console.log(`    Messages: ${count} | Last update: ${lastUpdate}`);
       console.log();
     }
@@ -71,11 +72,23 @@ program
   .command('status')
   .description('Show connection status and any gaps')
   .option('-h, --hours <hours>', 'Hours to look back', '24')
-  .action((options) => {
+  .action(async (options) => {
     const hours = parseInt(options.hours, 10);
+
+    // Check if listener is running
+    const health = await api.checkHealth();
+
+    console.log(`\n📊 Status:\n`);
+
+    if (health.success && health.data) {
+      console.log(`  🌐 Listener: ${health.data.connected ? '✅ Connected' : '⚠️  Disconnected'}`);
+    } else {
+      console.log(`  🌐 Listener: ❌ Not running (${health.error})`);
+    }
+
     const gaps = getConnectionGaps(hours);
 
-    console.log(`\n📊 Connection Status (last ${hours} hours):\n`);
+    console.log(`\n📈 Connection History (last ${hours} hours):\n`);
 
     if (gaps.length === 0) {
       console.log('  ✅ No significant connection gaps detected.\n');
@@ -97,23 +110,21 @@ program
 
 program
   .command('send')
-  .description('Send a message to a contact or group')
+  .description('Send a message to a contact or group (requires listener to be running)')
   .requiredOption('-t, --to <recipient>', 'Recipient: phone number, contact JID, or group ID')
   .requiredOption('-m, --message <text>', 'Message text to send')
   .action(async (options) => {
     try {
-      // Determine recipient JID
+      // Determine recipient JID for display
       let recipientId = options.to;
-
-      // If it doesn't look like a JID, assume it's a phone number
       if (!recipientId.includes('@')) {
-        recipientId = phoneToJid(recipientId);
+        recipientId = api.phoneToJid(recipientId);
         console.log(`📱 Resolved phone to: ${recipientId}`);
       }
 
       console.log(`\n📤 Sending message to ${recipientId}...`);
 
-      const result = await sendMessage(recipientId, options.message);
+      const result = await api.sendMessage(options.to, options.message);
 
       if (result.success) {
         console.log(`✅ Message sent successfully!`);
@@ -122,9 +133,6 @@ program
         console.error(`❌ Failed to send: ${result.error}`);
         process.exit(1);
       }
-
-      await disconnect();
-      process.exit(0);
     } catch (error) {
       console.error('Error:', error);
       process.exit(1);
@@ -133,9 +141,10 @@ program
 
 program
   .command('discover')
-  .description('Connect to WhatsApp and list all groups you are a member of')
+  .description('Connect to WhatsApp and list all groups (Note: will disconnect running listener)')
   .action(async () => {
     console.log('\n🔍 Connecting to discover groups...\n');
+    console.log('⚠️  Note: This will temporarily disconnect the running listener.\n');
 
     const { state, saveCreds } = await useMultiFileAuthState('./auth_state');
     const { version } = await fetchLatestBaileysVersion();
@@ -174,12 +183,14 @@ program
             console.log('─'.repeat(70));
           }
 
-          console.log('\n💡 Add group names (or unique substrings) to TRACKED_GROUPS in .env:');
-          console.log('   TRACKED_GROUPS=שומרים על קשר,כיתה ב1\n');
+          console.log('\n💡 Add group IDs to TRACKED_GROUP_IDS in .env:');
+          console.log('   TRACKED_GROUP_IDS=120363xxx@g.us,120363yyy@g.us\n');
 
+          sock.end(undefined);
           process.exit(0);
         } catch (err) {
           console.error('Error fetching groups:', err);
+          sock.end(undefined);
           process.exit(1);
         }
       }
