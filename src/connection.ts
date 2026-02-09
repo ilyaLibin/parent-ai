@@ -36,6 +36,7 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
   sock = makeWASocket({
     version,
     logger,
+    markOnlineOnConnect: false,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
