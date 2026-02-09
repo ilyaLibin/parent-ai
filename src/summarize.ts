@@ -13,10 +13,15 @@ export interface SummaryResult {
   gaps: { start: Date; end: Date; minutes: number }[];
 }
 
+export interface SummarizeOptions {
+  customPrompt?: string;
+}
+
 export async function summarizeGroup(
   groupIdentifier: string,
   startTime: Date,
-  endTime: Date
+  endTime: Date,
+  options?: SummarizeOptions
 ): Promise<SummaryResult> {
   // Fetch messages from database (supports both ID and name)
   const { group, messages } = getMessagesByGroup(
@@ -50,13 +55,17 @@ export async function summarizeGroup(
   const formattedMessages = formatMessagesForPrompt(messages);
 
   // Call Claude for summarization
+  const prompt = options?.customPrompt
+    ? `${options.customPrompt}\n\nHere are the messages:\n\n${formattedMessages}`
+    : buildSummaryPrompt(groupName, formattedMessages, startTime, endTime);
+
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2000,
     messages: [
       {
         role: 'user',
-        content: buildSummaryPrompt(groupName, formattedMessages, startTime, endTime),
+        content: prompt,
       },
     ],
   });

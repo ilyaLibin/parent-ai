@@ -123,6 +123,12 @@ export function getGroups(): Group[] {
   return db.prepare('SELECT * FROM groups ORDER BY name').all() as Group[];
 }
 
+export function getGroupsByIds(ids: string[]): Group[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  return db.prepare(`SELECT * FROM groups WHERE id IN (${placeholders}) ORDER BY name`).all(...ids) as Group[];
+}
+
 export function getGroupByName(name: string): Group | undefined {
   return db.prepare(
     'SELECT * FROM groups WHERE LOWER(name) LIKE LOWER(?)'
