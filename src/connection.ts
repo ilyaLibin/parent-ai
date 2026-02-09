@@ -13,7 +13,7 @@ import qrcode from 'qrcode-terminal';
 import { logConnectionEvent } from './db.js';
 
 const AUTH_DIR = './auth_state';
-const logger = pino({ level: 'warn' });
+const logger = pino({ level: 'silent' });
 
 export interface ConnectionCallbacks {
   onConnected?: (sock: WASocket) => void;
