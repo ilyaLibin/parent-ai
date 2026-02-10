@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { Command } from 'commander';
-import { summarizeGroup, formatSummaryForDisplay } from './summarize.js';
-import { getGroups, getMessageCount, getConnectionGaps, saveGroup } from './db.js';
+import { summarizeGroup, formatSummaryForDisplay } from '../packages/api/src/services/summarize.js';
+import { getGroups, getMessageCount, getConnectionGaps, saveGroup } from '@parent-ai/shared';
 import * as api from './api-client.js';
 import makeWASocket, {
   useMultiFileAuthState,

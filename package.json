@@ -1,35 +1,27 @@
 {
   "name": "parent-ai",
   "version": "1.0.0",
+  "private": true,
   "description": "WhatsApp group message tracker with AI summaries",
   "type": "module",
-  "main": "dist/index.js",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "summarize": "tsx src/cli.ts summarize",
-    "send": "tsx src/cli.ts send",
-    "discover": "tsx src/cli.ts discover",
-    "groups": "tsx src/cli.ts groups",
-    "status": "tsx src/cli.ts status"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
-    "@hono/node-server": "^1.19.9",
-    "@whiskeysockets/baileys": "^6.7.16",
-    "better-sqlite3": "^11.7.0",
-    "commander": "^13.1.0",
-    "dotenv": "^16.4.7",
-    "hono": "^4.11.9",
-    "node-cron": "^4.2.1",
-    "pino": "^9.6.0",
-    "qrcode-terminal": "^0.12.0"
+    "dev:listener": "npm run dev -w packages/listener",
+    "dev:api": "npm run dev -w packages/api",
+    "dev:telegram": "npm run dev -w packages/telegram",
+    "dev:cron": "npm run dev -w packages/cron",
+    "build": "npm run build --workspaces",
+    "cli": "tsx src/cli.ts"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.13.1",
-    "@types/node-cron": "^3.0.11",
+    "@anthropic-ai/sdk": "^0.74.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "better-sqlite3": "^12.6.2",
+    "commander": "^14.0.3",
+    "pino": "^10.3.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   },

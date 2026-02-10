@@ -1,0 +1,43 @@
+services:
+  listener:
+    build:
+      context: .
+      dockerfile: packages/listener/Dockerfile
+    volumes:
+      - db-data:/app/data
+      - auth-state:/app/auth_state
+    env_file: .env
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    ports:
+      - "3033:3033"
+    volumes:
+      - db-data:/app/data
+    env_file: .env
+    restart: unless-stopped
+
+  telegram:
+    build:
+      context: .
+      dockerfile: packages/telegram/Dockerfile
+    env_file: .env
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  cron:
+    build:
+      context: .
+      dockerfile: packages/cron/Dockerfile
+    env_file: .env
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  auth-state:

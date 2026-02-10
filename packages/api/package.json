@@ -1,0 +1,25 @@
+{
+  "name": "@parent-ai/api",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@parent-ai/shared": "*",
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@hono/node-server": "^1.19.9",
+    "@ai-sdk/anthropic": "^1.0.0",
+    "ai": "^4.0.0",
+    "hono": "^4.11.9",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
