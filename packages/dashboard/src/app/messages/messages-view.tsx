@@ -58,7 +58,10 @@ export function MessagesView({ groups }: { groups: Group[] }) {
     <div className="flex gap-6 h-[calc(100vh-10rem)]">
       {/* Group list */}
       <div className="w-64 shrink-0 space-y-1 overflow-y-auto">
-        {groups.map((group) => (
+        {[...groups].sort((a, b) => {
+          if ((a.messageCount > 0) !== (b.messageCount > 0)) return b.messageCount > 0 ? 1 : -1;
+          return b.updated_at - a.updated_at;
+        }).map((group) => (
           <button
             key={group.id}
             onClick={() => selectGroup(group.id)}
