@@ -59,7 +59,36 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_scheduled_status_time
     ON scheduled_messages(status, scheduled_at);
+
+  CREATE TABLE IF NOT EXISTS cron_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    schedule TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    method TEXT NOT NULL DEFAULT 'POST',
+    body TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
+
+// Seed default cron jobs (only on first boot — INSERT OR IGNORE respects UNIQUE name)
+const now = Date.now();
+db.prepare(`
+  INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`).run('aviv-daily-report', '0 20 * * 0-4', '/summary/agent/daily-report', 'POST', null, 0, now, now);
+
+db.prepare(`
+  INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`).run('daily-summary', '0 20 * * *', '/summary/daily', 'POST', null, 0, now, now);
+
+db.prepare(`
+  INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`).run('todays-schedule', '40 16 * * *', '/summary/todays', 'POST', null, 1, now, now);
 
 export interface Group {
   id: string;
@@ -295,6 +324,85 @@ export function getPendingMessages(): ScheduledMessage[] {
 export function getMessageRawJson(messageId: string): string | null {
   const row = db.prepare('SELECT raw_json FROM messages WHERE id = ?').get(messageId) as { raw_json: string | null } | undefined;
   return row?.raw_json ?? null;
+}
+
+// Cron jobs
+export interface CronJob {
+  id: number;
+  name: string;
+  schedule: string;
+  endpoint: string;
+  method: string;
+  body: string | null;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+interface CronJobRow {
+  id: number;
+  name: string;
+  schedule: string;
+  endpoint: string;
+  method: string;
+  body: string | null;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+function rowToCronJob(row: CronJobRow): CronJob {
+  return { ...row, enabled: row.enabled === 1 };
+}
+
+export function getCronJobs(enabledOnly?: boolean): CronJob[] {
+  const rows = enabledOnly
+    ? db.prepare('SELECT * FROM cron_jobs WHERE enabled = 1 ORDER BY id').all() as CronJobRow[]
+    : db.prepare('SELECT * FROM cron_jobs ORDER BY id').all() as CronJobRow[];
+  return rows.map(rowToCronJob);
+}
+
+export function getCronJob(id: number): CronJob | undefined {
+  const row = db.prepare('SELECT * FROM cron_jobs WHERE id = ?').get(id) as CronJobRow | undefined;
+  return row ? rowToCronJob(row) : undefined;
+}
+
+export function createCronJob(job: { name: string; schedule: string; endpoint: string; method?: string; body?: string | null; enabled?: boolean }): CronJob {
+  const now = Date.now();
+  const result = db.prepare(`
+    INSERT INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(job.name, job.schedule, job.endpoint, job.method || 'POST', job.body ?? null, job.enabled !== false ? 1 : 0, now, now);
+  return getCronJob(result.lastInsertRowid as number)!;
+}
+
+export function updateCronJobById(id: number, updates: Partial<{ name: string; schedule: string; endpoint: string; method: string; body: string | null; enabled: boolean }>): CronJob | undefined {
+  const existing = getCronJob(id);
+  if (!existing) return undefined;
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+  if (updates.schedule !== undefined) { fields.push('schedule = ?'); values.push(updates.schedule); }
+  if (updates.endpoint !== undefined) { fields.push('endpoint = ?'); values.push(updates.endpoint); }
+  if (updates.method !== undefined) { fields.push('method = ?'); values.push(updates.method); }
+  if (updates.body !== undefined) { fields.push('body = ?'); values.push(updates.body); }
+  if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+
+  if (fields.length === 0) return existing;
+
+  fields.push('updated_at = ?');
+  values.push(Date.now());
+  values.push(id);
+
+  db.prepare(`UPDATE cron_jobs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return getCronJob(id);
+}
+
+export function deleteCronJobById(id: number): boolean {
+  const result = db.prepare('DELETE FROM cron_jobs WHERE id = ?').run(id);
+  return result.changes > 0;
 }
 
 export { db };
