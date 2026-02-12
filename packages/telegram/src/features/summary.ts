@@ -17,6 +17,20 @@ summaryFeature.command('summary', async (ctx) => {
   }
 });
 
+summaryFeature.command('today', async (ctx) => {
+  await ctx.reply('Checking today\'s schedule...');
+  try {
+    const result = await api.triggerTodaysSchedule();
+    if (result.success) {
+      await ctx.reply(`Schedule sent! (${result.steps} steps)`);
+    } else {
+      await ctx.reply(`Failed: ${result.error}`);
+    }
+  } catch (err) {
+    await ctx.reply(`Error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+});
+
 summaryFeature.command('aviv', async (ctx) => {
   await ctx.reply('Generating Aviv school daily report (agent mode)...');
   try {

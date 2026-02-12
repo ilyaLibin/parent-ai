@@ -13,6 +13,7 @@ export const cronJobs: CronJob[] = [
     schedule: '0 20 * * 0-4', // Sun-Thu at 8 PM (school nights)
     endpoint: '/summary/agent/daily-report',
     method: 'POST',
+    enabled: false, // disabled — use agent daily report instead
   },
   {
     name: 'daily-summary',
@@ -20,5 +21,11 @@ export const cronJobs: CronJob[] = [
     endpoint: '/summary/daily',
     method: 'POST',
     enabled: false, // disabled — use agent daily report instead
+  },
+  {
+    name: 'todays-schedule',
+    schedule: '0 16 * * 0-4', // Sun-Thu at 4 PM
+    endpoint: '/summary/todays',
+    method: 'POST',
   },
 ];

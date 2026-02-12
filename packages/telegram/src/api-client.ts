@@ -63,3 +63,7 @@ export async function triggerAvivSchoolSummary(): Promise<SummaryResult> {
 export async function triggerDailyReport(): Promise<AgentReportResult> {
   return request('/summary/agent/daily-report', { method: 'POST' });
 }
+
+export async function triggerTodaysSchedule(): Promise<AgentReportResult> {
+  return request('/summary/todays', { method: 'POST' });
+}
