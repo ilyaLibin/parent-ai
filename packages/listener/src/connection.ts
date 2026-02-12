@@ -14,6 +14,7 @@ import { logConnectionEvent } from '@parent-ai/shared';
 
 const AUTH_DIR = process.env.AUTH_STATE_DIR || './auth_state';
 const logger = pino({ level: 'silent' });
+const signalLogger = pino({ level: 'error' }); // suppress signal protocol noise
 
 export interface ConnectionCallbacks {
   onConnected?: (sock: WASocket) => void;
@@ -39,7 +40,7 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
     markOnlineOnConnect: false,
     auth: {
       creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
+      keys: makeCacheableSignalKeyStore(state.keys, signalLogger),
     },
   });
 

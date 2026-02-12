@@ -38,6 +38,8 @@ services:
       context: .
       dockerfile: packages/cron/Dockerfile
     env_file: .env
+    environment:
+      - TZ=Asia/Jerusalem
     depends_on:
       - api
     restart: unless-stopped

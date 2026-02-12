@@ -24,7 +24,7 @@ export const cronJobs: CronJob[] = [
   },
   {
     name: 'todays-schedule',
-    schedule: '0 16 * * 0-4', // Sun-Thu at 4 PM
+    schedule: '40 16 * * *', // every day at 4:40 PM (testing)
     endpoint: '/summary/todays',
     method: 'POST',
   },

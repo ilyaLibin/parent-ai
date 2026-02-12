@@ -36,6 +36,7 @@ chatFeature.on('message:text', async (ctx) => {
   // Ignore commands (they're handled by other features)
   if (ctx.message.text.startsWith('/')) return;
 
+  console.log(`[bot] Chat from ${ctx.from?.first_name || 'unknown'}: "${ctx.message.text.substring(0, 80)}"`);
   try {
     const result = await generateText({
       model: anthropic('claude-sonnet-4-20250514'),
@@ -56,9 +57,10 @@ Respond in the same language the user writes in.`,
       maxSteps: 5,
     });
 
+    console.log(`[bot] Chat reply (${result.steps.length} steps): "${result.text?.substring(0, 80)}"`);
     await ctx.reply(result.text || 'Done!');
   } catch (err) {
-    console.error('Chat error:', err);
+    console.error('[bot] Chat error:', err);
     await ctx.reply(`Sorry, something went wrong: ${err instanceof Error ? err.message : String(err)}`);
   }
 });

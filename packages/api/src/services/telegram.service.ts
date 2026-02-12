@@ -9,6 +9,7 @@ export async function sendTelegram(
     throw new Error('TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set in .env');
   }
 
+  console.log(`[telegram] Sending message (${text.length} chars, ${parseMode})...`);
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
   const res = await fetch(url, {
     method: 'POST',
@@ -22,6 +23,8 @@ export async function sendTelegram(
 
   if (!res.ok) {
     const body = await res.text();
+    console.error(`[telegram] Send failed: ${res.status} ${body}`);
     throw new Error(`Telegram API error ${res.status}: ${body}`);
   }
+  console.log('[telegram] Message sent successfully');
 }

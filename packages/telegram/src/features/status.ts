@@ -4,8 +4,10 @@ import * as api from '../api-client.js';
 export const statusFeature = new Composer();
 
 statusFeature.command('status', async (ctx) => {
+  console.log(`[bot] /status from ${ctx.from?.first_name || 'unknown'}`);
   try {
     const status = await api.getStatus();
+    console.log(`[bot] /status: ${status.groupCount} groups, ${status.totalMessages} messages`);
     let text = `*System Status*\n`;
     text += `Groups tracked: ${status.groupCount}\n`;
     text += `Total messages: ${status.totalMessages}\n`;
@@ -23,13 +25,16 @@ statusFeature.command('status', async (ctx) => {
 
     await ctx.reply(text);
   } catch (err) {
+    console.error('[bot] /status error:', err);
     await ctx.reply(`Error: ${err instanceof Error ? err.message : String(err)}`);
   }
 });
 
 statusFeature.command('groups', async (ctx) => {
+  console.log(`[bot] /groups from ${ctx.from?.first_name || 'unknown'}`);
   try {
     const data = await api.getGroups();
+    console.log(`[bot] /groups: ${data.groups.length} groups`);
     if (data.groups.length === 0) {
       await ctx.reply('No tracked groups found.');
       return;
@@ -41,6 +46,7 @@ statusFeature.command('groups', async (ctx) => {
     }
     await ctx.reply(text);
   } catch (err) {
+    console.error('[bot] /groups error:', err);
     await ctx.reply(`Error: ${err instanceof Error ? err.message : String(err)}`);
   }
 });

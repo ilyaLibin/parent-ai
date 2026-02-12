@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { cronJobs } from './cron.config.js';
 
-const API_BASE = `http://localhost:${process.env.API_PORT || 3033}`;
+const API_BASE = process.env.API_URL || `http://localhost:${process.env.API_PORT || 3033}`;
 
 let started = false;
 
