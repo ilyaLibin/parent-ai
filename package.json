@@ -12,6 +12,7 @@
     "dev:api": "npm run dev -w packages/api",
     "dev:telegram": "npm run dev -w packages/telegram",
     "dev:cron": "npm run dev -w packages/cron",
+    "dev:dashboard": "npm run dev -w packages/dashboard",
     "build": "npm run build --workspaces",
     "cli": "tsx src/cli.ts"
   },

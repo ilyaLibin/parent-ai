@@ -44,3 +44,16 @@ services:
       - api
     restart: unless-stopped
 
+  dashboard:
+    image: parent-ai-dashboard:latest
+    build:
+      context: .
+      dockerfile: packages/dashboard/Dockerfile
+    ports:
+      - "3333:3333"
+    environment:
+      - API_URL=http://api:3033
+    depends_on:
+      - api
+    restart: unless-stopped
+
