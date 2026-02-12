@@ -12,7 +12,7 @@ import { mkdirSync } from 'fs';
 import qrcode from 'qrcode-terminal';
 import { logConnectionEvent } from '@parent-ai/shared';
 
-const AUTH_DIR = './auth_state';
+const AUTH_DIR = process.env.AUTH_STATE_DIR || './auth_state';
 const logger = pino({ level: 'silent' });
 
 export interface ConnectionCallbacks {

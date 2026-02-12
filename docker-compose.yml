@@ -1,26 +1,29 @@
 services:
   listener:
+    image: parent-ai-listener:latest
     build:
       context: .
       dockerfile: packages/listener/Dockerfile
     volumes:
-      - db-data:/app/data
-      - auth-state:/app/auth_state
+      - ./data:/app/data
+      - ./auth_state:/app/auth_state
     env_file: .env
     restart: unless-stopped
 
   api:
+    image: parent-ai-api:latest
     build:
       context: .
       dockerfile: packages/api/Dockerfile
     ports:
       - "3033:3033"
     volumes:
-      - db-data:/app/data
+      - ./data:/app/data
     env_file: .env
     restart: unless-stopped
 
   telegram:
+    image: parent-ai-telegram:latest
     build:
       context: .
       dockerfile: packages/telegram/Dockerfile
@@ -30,6 +33,7 @@ services:
     restart: unless-stopped
 
   cron:
+    image: parent-ai-cron:latest
     build:
       context: .
       dockerfile: packages/cron/Dockerfile
@@ -38,6 +42,3 @@ services:
       - api
     restart: unless-stopped
 
-volumes:
-  db-data:
-  auth-state:

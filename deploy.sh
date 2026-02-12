@@ -12,7 +12,7 @@
 set -e
 
 SERVICE=$1
-MAC_MINI="${MAC_MINI_HOST:-user@mac-mini.local}"
+MAC_MINI="${MAC_MINI_HOST:-ilyalibin@homecomp.local}"
 REMOTE_DIR="${MAC_MINI_DIR:-~/parent-ai}"
 
 if [ -z "$SERVICE" ]; then
@@ -35,10 +35,10 @@ for SVC in $SERVICES; do
   docker build -t "parent-ai-$SVC" -f "packages/$SVC/Dockerfile" .
 
   echo "  Pushing to Mac Mini..."
-  docker save "parent-ai-$SVC" | ssh "$MAC_MINI" "docker load"
+  docker save "parent-ai-$SVC" | ssh "$MAC_MINI" "/usr/local/bin/docker load"
 
   echo "  Restarting $SVC on Mac Mini..."
-  ssh "$MAC_MINI" "cd $REMOTE_DIR && docker compose up -d $SVC"
+  ssh "$MAC_MINI" "cd $REMOTE_DIR && /usr/local/bin/docker compose up -d $SVC"
 
   echo "  $SVC deployed!"
 done
