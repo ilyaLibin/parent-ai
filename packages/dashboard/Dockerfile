@@ -22,6 +22,8 @@ FROM node:20-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=3333
+ENV HOSTNAME=0.0.0.0
 
 COPY --from=builder /app/packages/dashboard/.next/standalone ./
 COPY --from=builder /app/packages/dashboard/.next/static ./packages/dashboard/.next/static
