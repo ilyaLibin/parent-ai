@@ -175,21 +175,22 @@ Use Telegram Markdown: *bold* for the header.`;
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run('todays-schedule', '40 16 * * *', '', 'POST', null, 1, TODAYS_SCHEDULE_SYSTEM_PROMPT, TODAYS_SCHEDULE_USER_PROMPT, 'sonnet', now, now);
 
-  // Seed knowledge from .md files in packages/shared/knowledge/
-  const KNOWLEDGE_DIR = join(__dirname, '..', 'knowledge');
-  try {
-    const files = readdirSync(KNOWLEDGE_DIR).filter((f) => f.endsWith('.md'));
-    for (const file of files) {
-      const name = basename(file, '.md');
-      const content = readFileSync(join(KNOWLEDGE_DIR, file), 'utf-8');
-      db.prepare(`INSERT OR IGNORE INTO knowledge (name, content, created_at, updated_at) VALUES (?, ?, ?, ?)`)
-        .run(name, content, now, now);
-    }
-  } catch {
-    // Knowledge dir may not exist in all environments
-  }
-
   db.prepare(`INSERT INTO _meta (key, value) VALUES (?, ?)`).run('seeded_v2', String(now));
+}
+
+// Seed knowledge from .md files — runs every startup, INSERT OR IGNORE won't overwrite existing entries
+const KNOWLEDGE_DIR = join(__dirname, '..', 'knowledge');
+try {
+  const knowledgeNow = Date.now();
+  const files = readdirSync(KNOWLEDGE_DIR).filter((f) => f.endsWith('.md'));
+  for (const file of files) {
+    const name = basename(file, '.md');
+    const content = readFileSync(join(KNOWLEDGE_DIR, file), 'utf-8');
+    db.prepare(`INSERT OR IGNORE INTO knowledge (name, content, created_at, updated_at) VALUES (?, ?, ?, ?)`)
+      .run(name, content, knowledgeNow, knowledgeNow);
+  }
+} catch {
+  // Knowledge dir may not exist in all environments
 }
 
 // Migrate existing agent-based jobs to use system_prompt (runs every time, idempotent)
