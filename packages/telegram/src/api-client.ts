@@ -36,10 +36,18 @@ interface SummaryResult {
   errors: string[];
 }
 
-interface AgentReportResult {
+interface AgentResult {
   success: boolean;
-  steps: number;
+  runId?: number;
+  steps?: unknown[];
+  resultText?: string | null;
   error?: string;
+}
+
+interface CronJob {
+  id: number;
+  name: string;
+  system_prompt: string | null;
 }
 
 // --- API methods ---
@@ -60,10 +68,12 @@ export async function triggerAvivSchoolSummary(): Promise<SummaryResult> {
   return request('/summary/aviv_school', { method: 'POST' });
 }
 
-export async function triggerDailyReport(): Promise<AgentReportResult> {
-  return request('/summary/agent/daily-report', { method: 'POST' });
-}
-
-export async function triggerTodaysSchedule(): Promise<AgentReportResult> {
-  return request('/summary/todays', { method: 'POST' });
+export async function executeTaskByName(name: string): Promise<AgentResult> {
+  // Look up task by name
+  const jobs = await request<CronJob[]>(`/cron-jobs?name=${encodeURIComponent(name)}`);
+  if (jobs.length === 0) {
+    throw new Error(`Task "${name}" not found`);
+  }
+  const job = jobs[0];
+  return request(`/task/${job.id}/execute`, { method: 'POST' });
 }

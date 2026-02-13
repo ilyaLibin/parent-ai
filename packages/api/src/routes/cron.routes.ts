@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   getCronJobs,
   getCronJob,
+  getCronJobByName,
   createCronJob,
   updateCronJobById,
   deleteCronJobById,
@@ -12,6 +13,11 @@ const anthropic = new Anthropic();
 const cron = new Hono();
 
 cron.get('/cron-jobs', (c) => {
+  const name = c.req.query('name');
+  if (name) {
+    const job = getCronJobByName(name);
+    return c.json(job ? [job] : []);
+  }
   const enabledOnly = c.req.query('enabled') === 'true';
   const jobs = getCronJobs(enabledOnly);
   return c.json(jobs);
@@ -26,8 +32,11 @@ cron.get('/cron-jobs/:id', (c) => {
 
 cron.post('/cron-jobs', async (c) => {
   const body = await c.req.json();
-  if (!body.name || !body.schedule || !body.endpoint) {
-    return c.json({ error: 'name, schedule, and endpoint are required' }, 400);
+  if (!body.name || !body.schedule) {
+    return c.json({ error: 'name and schedule are required' }, 400);
+  }
+  if (!body.system_prompt && !body.endpoint) {
+    return c.json({ error: 'Either system_prompt (agent task) or endpoint (legacy task) is required' }, 400);
   }
   const job = createCronJob(body);
   return c.json(job, 201);

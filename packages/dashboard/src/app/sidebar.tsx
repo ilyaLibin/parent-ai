@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const links = [
-  { href: '/cron-jobs', label: 'Cron Jobs' },
+  { href: '/tasks', label: 'Tasks' },
+  { href: '/runs', label: 'Runs' },
+  { href: '/knowledge', label: 'Knowledge' },
   { href: '/messages', label: 'Messages' },
 ];
 
@@ -47,7 +49,7 @@ export function Sidebar() {
             href={link.href}
             onClick={() => setOpen(false)}
             className={`block px-4 py-2 rounded-lg transition-colors ${
-              pathname === link.href
+              pathname.startsWith(link.href)
                 ? 'bg-zinc-800 text-white'
                 : 'text-zinc-300 hover:text-white hover:bg-zinc-800'
             }`}

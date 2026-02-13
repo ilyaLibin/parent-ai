@@ -8,11 +8,9 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.0.0",
-    "ai": "^4.0.0",
+    "@anthropic-ai/sdk": "^0.52.0",
     "dotenv": "^16.4.7",
-    "grammy": "^1.31.0",
-    "zod": "^3.24.0"
+    "grammy": "^1.31.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.1",

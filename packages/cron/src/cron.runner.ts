@@ -11,6 +11,7 @@ interface CronJob {
   method: string;
   body: string | null;
   enabled: boolean;
+  system_prompt: string | null;
 }
 
 function matchesCurrentMinute(schedule: string): boolean {
@@ -32,18 +33,32 @@ async function fetchEnabledJobs(): Promise<CronJob[]> {
 }
 
 async function fireJob(job: CronJob): Promise<void> {
-  const url = `${API_BASE}${job.endpoint}`;
-  console.log(`[cron] ${job.name} -> ${job.method} ${job.endpoint}`);
-  try {
-    const res = await fetch(url, {
-      method: job.method,
-      headers: { 'Content-Type': 'application/json' },
-      body: job.body ?? undefined,
-    });
-    const data = await res.json();
-    console.log(`[cron] ${job.name} completed:`, data);
-  } catch (err) {
-    console.error(`[cron] ${job.name} failed:`, err);
+  if (job.system_prompt) {
+    // Agent-based task: execute via generic agent
+    const url = `${API_BASE}/task/${job.id}/execute`;
+    console.log(`[cron] ${job.name} -> POST /task/${job.id}/execute (agent)`);
+    try {
+      const res = await fetch(url, { method: 'POST' });
+      const data = await res.json();
+      console.log(`[cron] ${job.name} completed:`, data.success ?? data);
+    } catch (err) {
+      console.error(`[cron] ${job.name} failed:`, err);
+    }
+  } else {
+    // Legacy endpoint-based task
+    const url = `${API_BASE}${job.endpoint}`;
+    console.log(`[cron] ${job.name} -> ${job.method} ${job.endpoint}`);
+    try {
+      const res = await fetch(url, {
+        method: job.method,
+        headers: { 'Content-Type': 'application/json' },
+        body: job.body ?? undefined,
+      });
+      const data = await res.json();
+      console.log(`[cron] ${job.name} completed:`, data);
+    } catch (err) {
+      console.error(`[cron] ${job.name} failed:`, err);
+    }
   }
 }
 

@@ -1,7 +1,9 @@
 import Database, { type Database as DatabaseType } from 'better-sqlite3';
-import { mkdirSync } from 'fs';
-import { dirname } from 'path';
+import { mkdirSync, readFileSync, readdirSync } from 'fs';
+import { dirname, join, basename } from 'path';
+import { fileURLToPath } from 'url';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH || './data/messages.db';
 
 // Ensure data directory exists
@@ -68,27 +70,166 @@ db.exec(`
     method TEXT NOT NULL DEFAULT 'POST',
     body TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
+    system_prompt TEXT,
+    user_prompt TEXT,
+    model TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS knowledge (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS task_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    started_at INTEGER NOT NULL,
+    completed_at INTEGER,
+    success INTEGER,
+    error TEXT,
+    steps_json TEXT,
+    result_text TEXT,
+    model TEXT,
+    token_usage_json TEXT,
+    FOREIGN KEY (task_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_task_runs_task_id ON task_runs(task_id, started_at);
 `);
 
-// Seed default cron jobs (only on first boot — INSERT OR IGNORE respects UNIQUE name)
-const now = Date.now();
-db.prepare(`
-  INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-`).run('aviv-daily-report', '0 20 * * 0-4', '/summary/agent/daily-report', 'POST', null, 0, now, now);
+// Migrate: add new columns to cron_jobs if missing (for existing databases)
+const cronColumns = db.pragma('table_info(cron_jobs)') as { name: string }[];
+const cronColNames = new Set(cronColumns.map((c) => c.name));
+if (!cronColNames.has('system_prompt')) db.exec('ALTER TABLE cron_jobs ADD COLUMN system_prompt TEXT');
+if (!cronColNames.has('user_prompt')) db.exec('ALTER TABLE cron_jobs ADD COLUMN user_prompt TEXT');
+if (!cronColNames.has('model')) db.exec('ALTER TABLE cron_jobs ADD COLUMN model TEXT');
 
-db.prepare(`
-  INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-`).run('daily-summary', '0 20 * * *', '/summary/daily', 'POST', null, 0, now, now);
+// --- Seeding (runs once, tracked via _meta table) ---
+db.exec(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)`);
 
-db.prepare(`
-  INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-`).run('todays-schedule', '40 16 * * *', '/summary/todays', 'POST', null, 1, now, now);
+const seeded = db.prepare(`SELECT value FROM _meta WHERE key = 'seeded_v2'`).get() as { value: string } | undefined;
+
+// If this is an existing DB (has cron_jobs but no seed marker), mark as already seeded
+// so we don't re-insert deleted tasks
+const existingJobCount = (db.prepare('SELECT COUNT(*) as c FROM cron_jobs').get() as { c: number }).c;
+if (!seeded && existingJobCount > 0) {
+  db.prepare(`INSERT OR REPLACE INTO _meta (key, value) VALUES (?, ?)`).run('seeded_v2', String(Date.now()));
+}
+
+const shouldSeed = !db.prepare(`SELECT value FROM _meta WHERE key = 'seeded_v2'`).get();
+
+if (shouldSeed) {
+  const now = Date.now();
+
+  const AVIV_DAILY_REPORT_SYSTEM_PROMPT = `You are a school assistant for Aviv's parents. Your job is to:
+1. Fetch recent messages from Aviv's school WhatsApp groups (group IDs: 120363331200450674@g.us, 120363327802106026@g.us)
+2. If any messages contain images (type "image"), transcribe them — they often contain homework assignments or important notices
+3. Look up the school schedule from the knowledge base (name: "aviv_school_schedule")
+4. Combine all information with the school schedule to generate a clear, actionable daily report in Hebrew
+5. Send the report via Telegram
+
+## Context
+- Aviv is in class ב1 (2nd grade)
+- His main teacher is Vered (ורד)
+- Today is: {{today}}
+- Tomorrow is: {{tomorrow}}
+
+## Report format (in Hebrew)
+The Telegram message should include:
+- 📚 *שיעורי בית* — homework assignments found in messages or images
+- 📋 *מערכת שעות למחר* — tomorrow's lessons from the schedule
+- 📌 *דברים להביא* — things to bring to school
+- ⚠️ *הודעות חשובות* — important announcements or schedule changes
+- ✅ *פעולות נדרשות* — action items for parents
+
+Keep it short, clear, and in Hebrew. Use bullet points. Skip empty sections.
+Use Telegram Markdown: *bold* for headers.`;
+
+  const AVIV_DAILY_REPORT_USER_PROMPT = `Generate the daily school report for tomorrow ({{tomorrow}}). Start by fetching messages from the last 24 hours from Aviv's school groups, then look up the schedule from knowledge.`;
+
+  const TODAYS_SCHEDULE_SYSTEM_PROMPT = `You are a school assistant for Aviv's parents. Aviv is in class ב1 (2nd grade).
+Look up the school schedule from the knowledge base (name: "aviv_school_schedule"), extract today's lessons, and send a short Telegram message in Hebrew.
+
+Format the message as a clear list with lesson number, subject, and teacher.
+Add a short friendly greeting at the top. Keep it concise.
+Use Telegram Markdown: *bold* for the header.`;
+
+  const TODAYS_SCHEDULE_USER_PROMPT = `Today is {{today}} ({{date}}). Look up the school schedule from knowledge and send today's schedule to Telegram.`;
+
+  db.prepare(`
+    INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, system_prompt, user_prompt, model, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('aviv-daily-report', '0 20 * * 0-4', '', 'POST', null, 0, AVIV_DAILY_REPORT_SYSTEM_PROMPT, AVIV_DAILY_REPORT_USER_PROMPT, 'sonnet', now, now);
+
+  db.prepare(`
+    INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('daily-summary', '0 20 * * *', '/summary/daily', 'POST', null, 0, now, now);
+
+  db.prepare(`
+    INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, system_prompt, user_prompt, model, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('todays-schedule', '40 16 * * *', '', 'POST', null, 1, TODAYS_SCHEDULE_SYSTEM_PROMPT, TODAYS_SCHEDULE_USER_PROMPT, 'sonnet', now, now);
+
+  // Seed knowledge from .md files in packages/shared/knowledge/
+  const KNOWLEDGE_DIR = join(__dirname, '..', 'knowledge');
+  try {
+    const files = readdirSync(KNOWLEDGE_DIR).filter((f) => f.endsWith('.md'));
+    for (const file of files) {
+      const name = basename(file, '.md');
+      const content = readFileSync(join(KNOWLEDGE_DIR, file), 'utf-8');
+      db.prepare(`INSERT OR IGNORE INTO knowledge (name, content, created_at, updated_at) VALUES (?, ?, ?, ?)`)
+        .run(name, content, now, now);
+    }
+  } catch {
+    // Knowledge dir may not exist in all environments
+  }
+
+  db.prepare(`INSERT INTO _meta (key, value) VALUES (?, ?)`).run('seeded_v2', String(now));
+}
+
+// Migrate existing agent-based jobs to use system_prompt (runs every time, idempotent)
+{
+  const AVIV_PROMPT = `You are a school assistant for Aviv's parents. Your job is to:
+1. Fetch recent messages from Aviv's school WhatsApp groups (group IDs: 120363331200450674@g.us, 120363327802106026@g.us)
+2. If any messages contain images (type "image"), transcribe them — they often contain homework assignments or important notices
+3. Look up the school schedule from the knowledge base (name: "aviv_school_schedule")
+4. Combine all information with the school schedule to generate a clear, actionable daily report in Hebrew
+5. Send the report via Telegram
+
+## Context
+- Aviv is in class ב1 (2nd grade)
+- His main teacher is Vered (ורד)
+- Today is: {{today}}
+- Tomorrow is: {{tomorrow}}
+
+## Report format (in Hebrew)
+The Telegram message should include:
+- 📚 *שיעורי בית* — homework assignments found in messages or images
+- 📋 *מערכת שעות למחר* — tomorrow's lessons from the schedule
+- 📌 *דברים להביא* — things to bring to school
+- ⚠️ *הודעות חשובות* — important announcements or schedule changes
+- ✅ *פעולות נדרשות* — action items for parents
+
+Keep it short, clear, and in Hebrew. Use bullet points. Skip empty sections.
+Use Telegram Markdown: *bold* for headers.`;
+
+  const TODAYS_PROMPT = `You are a school assistant for Aviv's parents. Aviv is in class ב1 (2nd grade).
+Look up the school schedule from the knowledge base (name: "aviv_school_schedule"), extract today's lessons, and send a short Telegram message in Hebrew.
+
+Format the message as a clear list with lesson number, subject, and teacher.
+Add a short friendly greeting at the top. Keep it concise.
+Use Telegram Markdown: *bold* for the header.`;
+
+  db.prepare(`UPDATE cron_jobs SET system_prompt = ?, user_prompt = ?, model = COALESCE(model, 'sonnet') WHERE name = 'aviv-daily-report' AND system_prompt IS NULL`)
+    .run(AVIV_PROMPT, `Generate the daily school report for tomorrow ({{tomorrow}}). Start by fetching messages from the last 24 hours from Aviv's school groups, then look up the schedule from knowledge.`);
+  db.prepare(`UPDATE cron_jobs SET system_prompt = ?, user_prompt = ?, model = COALESCE(model, 'sonnet') WHERE name = 'todays-schedule' AND system_prompt IS NULL`)
+    .run(TODAYS_PROMPT, `Today is {{today}} ({{date}}). Look up the school schedule from knowledge and send today's schedule to Telegram.`);
+}
 
 export interface Group {
   id: string;
@@ -335,6 +476,9 @@ export interface CronJob {
   method: string;
   body: string | null;
   enabled: boolean;
+  system_prompt: string | null;
+  user_prompt: string | null;
+  model: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -347,6 +491,9 @@ interface CronJobRow {
   method: string;
   body: string | null;
   enabled: number;
+  system_prompt: string | null;
+  user_prompt: string | null;
+  model: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -367,16 +514,16 @@ export function getCronJob(id: number): CronJob | undefined {
   return row ? rowToCronJob(row) : undefined;
 }
 
-export function createCronJob(job: { name: string; schedule: string; endpoint: string; method?: string; body?: string | null; enabled?: boolean }): CronJob {
+export function createCronJob(job: { name: string; schedule: string; endpoint?: string; method?: string; body?: string | null; enabled?: boolean; system_prompt?: string | null; user_prompt?: string | null; model?: string | null }): CronJob {
   const now = Date.now();
   const result = db.prepare(`
-    INSERT INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(job.name, job.schedule, job.endpoint, job.method || 'POST', job.body ?? null, job.enabled !== false ? 1 : 0, now, now);
+    INSERT INTO cron_jobs (name, schedule, endpoint, method, body, enabled, system_prompt, user_prompt, model, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(job.name, job.schedule, job.endpoint || '', job.method || 'POST', job.body ?? null, job.enabled !== false ? 1 : 0, job.system_prompt ?? null, job.user_prompt ?? null, job.model ?? null, now, now);
   return getCronJob(result.lastInsertRowid as number)!;
 }
 
-export function updateCronJobById(id: number, updates: Partial<{ name: string; schedule: string; endpoint: string; method: string; body: string | null; enabled: boolean }>): CronJob | undefined {
+export function updateCronJobById(id: number, updates: Partial<{ name: string; schedule: string; endpoint: string; method: string; body: string | null; enabled: boolean; system_prompt: string | null; user_prompt: string | null; model: string | null }>): CronJob | undefined {
   const existing = getCronJob(id);
   if (!existing) return undefined;
 
@@ -389,6 +536,9 @@ export function updateCronJobById(id: number, updates: Partial<{ name: string; s
   if (updates.method !== undefined) { fields.push('method = ?'); values.push(updates.method); }
   if (updates.body !== undefined) { fields.push('body = ?'); values.push(updates.body); }
   if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
+  if (updates.system_prompt !== undefined) { fields.push('system_prompt = ?'); values.push(updates.system_prompt); }
+  if (updates.user_prompt !== undefined) { fields.push('user_prompt = ?'); values.push(updates.user_prompt); }
+  if (updates.model !== undefined) { fields.push('model = ?'); values.push(updates.model); }
 
   if (fields.length === 0) return existing;
 
@@ -403,6 +553,99 @@ export function updateCronJobById(id: number, updates: Partial<{ name: string; s
 export function deleteCronJobById(id: number): boolean {
   const result = db.prepare('DELETE FROM cron_jobs WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+// Knowledge CRUD
+export interface Knowledge {
+  id: number;
+  name: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export function getKnowledgeList(): Omit<Knowledge, 'content'>[] {
+  return db.prepare('SELECT id, name, created_at, updated_at FROM knowledge ORDER BY name').all() as Omit<Knowledge, 'content'>[];
+}
+
+export function getKnowledgeById(id: number): Knowledge | undefined {
+  return db.prepare('SELECT * FROM knowledge WHERE id = ?').get(id) as Knowledge | undefined;
+}
+
+export function getKnowledgeByName(name: string): Knowledge | undefined {
+  return db.prepare('SELECT * FROM knowledge WHERE name = ?').get(name) as Knowledge | undefined;
+}
+
+export function createKnowledge(entry: { name: string; content: string }): Knowledge {
+  const now = Date.now();
+  const result = db.prepare('INSERT INTO knowledge (name, content, created_at, updated_at) VALUES (?, ?, ?, ?)')
+    .run(entry.name, entry.content, now, now);
+  return getKnowledgeById(result.lastInsertRowid as number)!;
+}
+
+export function updateKnowledgeById(id: number, updates: Partial<{ name: string; content: string }>): Knowledge | undefined {
+  const existing = getKnowledgeById(id);
+  if (!existing) return undefined;
+
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+  if (updates.content !== undefined) { fields.push('content = ?'); values.push(updates.content); }
+
+  if (fields.length === 0) return existing;
+
+  fields.push('updated_at = ?');
+  values.push(Date.now());
+  values.push(id);
+
+  db.prepare(`UPDATE knowledge SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  return getKnowledgeById(id);
+}
+
+export function deleteKnowledgeById(id: number): boolean {
+  return db.prepare('DELETE FROM knowledge WHERE id = ?').run(id).changes > 0;
+}
+
+// Task runs
+export interface TaskRun {
+  id: number;
+  task_id: number;
+  started_at: number;
+  completed_at: number | null;
+  success: number | null;
+  error: string | null;
+  steps_json: string | null;
+  result_text: string | null;
+  model: string | null;
+  token_usage_json: string | null;
+}
+
+export function createTaskRun(run: { task_id: number; started_at: number; model?: string | null }): number {
+  const result = db.prepare('INSERT INTO task_runs (task_id, started_at, model) VALUES (?, ?, ?)')
+    .run(run.task_id, run.started_at, run.model ?? null);
+  return result.lastInsertRowid as number;
+}
+
+export function completeTaskRun(id: number, data: { completed_at: number; success: boolean; error?: string | null; steps_json?: string | null; result_text?: string | null; token_usage_json?: string | null }): void {
+  db.prepare(`UPDATE task_runs SET completed_at = ?, success = ?, error = ?, steps_json = ?, result_text = ?, token_usage_json = ? WHERE id = ?`)
+    .run(data.completed_at, data.success ? 1 : 0, data.error ?? null, data.steps_json ?? null, data.result_text ?? null, data.token_usage_json ?? null, id);
+}
+
+export function getTaskRuns(taskId?: number, limit = 50): TaskRun[] {
+  if (taskId) {
+    return db.prepare('SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT ?').all(taskId, limit) as TaskRun[];
+  }
+  return db.prepare('SELECT * FROM task_runs ORDER BY started_at DESC LIMIT ?').all(limit) as TaskRun[];
+}
+
+export function getTaskRun(id: number): TaskRun | undefined {
+  return db.prepare('SELECT * FROM task_runs WHERE id = ?').get(id) as TaskRun | undefined;
+}
+
+export function getCronJobByName(name: string): CronJob | undefined {
+  const row = db.prepare('SELECT * FROM cron_jobs WHERE name = ?').get(name) as CronJobRow | undefined;
+  return row ? rowToCronJob(row) : undefined;
 }
 
 export { db };

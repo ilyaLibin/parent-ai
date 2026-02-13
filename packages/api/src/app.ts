@@ -3,6 +3,8 @@ import { health } from './routes/health.routes.js';
 import { whatsapp } from './routes/whatsapp.routes.js';
 import { summary } from './routes/summary.routes.js';
 import { cron } from './routes/cron.routes.js';
+import { task } from './routes/task.routes.js';
+import { knowledge } from './routes/knowledge.routes.js';
 
 const app = new Hono();
 
@@ -25,5 +27,7 @@ app.route('/', health);
 app.route('/', whatsapp);
 app.route('/', summary);
 app.route('/', cron);
+app.route('/', task);
+app.route('/', knowledge);
 
 export { app };

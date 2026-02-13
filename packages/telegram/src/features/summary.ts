@@ -24,10 +24,10 @@ summaryFeature.command('today', async (ctx) => {
   console.log(`[bot] /today from ${ctx.from?.first_name || 'unknown'}`);
   await ctx.reply('Checking today\'s schedule...');
   try {
-    const result = await api.triggerTodaysSchedule();
+    const result = await api.executeTaskByName('todays-schedule');
     if (result.success) {
-      console.log(`[bot] /today done: ${result.steps} steps`);
-      await ctx.reply(`Schedule sent! (${result.steps} steps)`);
+      console.log(`[bot] /today done: ${result.steps?.length ?? 0} steps`);
+      await ctx.reply(`Schedule sent!`);
     } else {
       console.error(`[bot] /today failed: ${result.error}`);
       await ctx.reply(`Failed: ${result.error}`);
@@ -42,10 +42,10 @@ summaryFeature.command('aviv', async (ctx) => {
   console.log(`[bot] /aviv from ${ctx.from?.first_name || 'unknown'}`);
   await ctx.reply('Generating Aviv school daily report (agent mode)...');
   try {
-    const result = await api.triggerDailyReport();
+    const result = await api.executeTaskByName('aviv-daily-report');
     if (result.success) {
-      console.log(`[bot] /aviv done: ${result.steps} steps`);
-      await ctx.reply(`Report generated and sent! (${result.steps} steps)`);
+      console.log(`[bot] /aviv done: ${result.steps?.length ?? 0} steps`);
+      await ctx.reply(`Report generated and sent!`);
     } else {
       console.error(`[bot] /aviv failed: ${result.error}`);
       await ctx.reply(`Report failed: ${result.error}`);
