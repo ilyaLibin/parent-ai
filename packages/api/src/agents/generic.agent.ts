@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { toolDefinitions, executeTool } from './tool-registry.js';
-import { createTaskRun, completeTaskRun } from '@parent-ai/shared';
+import { createTaskRun, completeTaskRun, updateTaskRunSteps } from '@parent-ai/shared';
 
 const anthropic = new Anthropic();
 
@@ -103,6 +103,9 @@ export async function runGenericAgent(opts: {
           });
         }
       }
+
+      // Persist steps so the dashboard can poll for live progress
+      updateTaskRunSteps(runId, JSON.stringify(steps));
 
       // Push assistant message + tool results
       messages.push({ role: 'assistant', content: response.content as Anthropic.ContentBlockParam[] });

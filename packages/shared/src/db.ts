@@ -596,6 +596,10 @@ export function createTaskRun(run: { task_id: number; started_at: number; model?
   return result.lastInsertRowid as number;
 }
 
+export function updateTaskRunSteps(id: number, stepsJson: string): void {
+  db.prepare('UPDATE task_runs SET steps_json = ? WHERE id = ?').run(stepsJson, id);
+}
+
 export function completeTaskRun(id: number, data: { completed_at: number; success: boolean; error?: string | null; steps_json?: string | null; result_text?: string | null; token_usage_json?: string | null }): void {
   db.prepare(`UPDATE task_runs SET completed_at = ?, success = ?, error = ?, steps_json = ?, result_text = ?, token_usage_json = ? WHERE id = ?`)
     .run(data.completed_at, data.success ? 1 : 0, data.error ?? null, data.steps_json ?? null, data.result_text ?? null, data.token_usage_json ?? null, id);

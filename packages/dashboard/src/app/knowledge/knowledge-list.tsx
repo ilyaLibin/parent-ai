@@ -24,37 +24,37 @@ export function KnowledgeList({ initialEntries }: { initialEntries: KnowledgeEnt
       <div className="mb-4">
         <Link
           href="/knowledge/new"
-          className="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors"
+          className="inline-block btn-accent rounded-lg px-4 py-2 text-sm font-medium"
         >
-          + New Entry
+          + new entry
         </Link>
       </div>
 
       {entries.length === 0 ? (
-        <p className="text-zinc-400">No knowledge entries.</p>
+        <p className="text-fg-muted">No knowledge entries.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {entries.map((entry) => (
             <div
               key={entry.id}
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col gap-2 hover:border-zinc-700 transition-colors"
+              className="card-raised rounded-lg p-4 flex flex-col gap-2 hover:border-accent/40 transition-all"
             >
-              <Link href={`/knowledge/${entry.id}`} className="text-lg font-semibold hover:text-blue-400 transition-colors">
+              <Link href={`/knowledge/${entry.id}`} className="text-sm font-bold hover:text-accent transition-colors">
                 {entry.name}
               </Link>
-              <div className="text-xs text-zinc-500">Updated: {formatDate(entry.updated_at)}</div>
-              <div className="flex gap-2 mt-auto pt-2 border-t border-zinc-800/50">
+              <div className="text-xs text-fg-muted">updated: {formatDate(entry.updated_at)}</div>
+              <div className="flex gap-2 mt-auto pt-2 border-t border-border-subtle">
                 <Link
                   href={`/knowledge/${entry.id}`}
-                  className="text-xs text-blue-400 hover:text-blue-300"
+                  className="text-xs text-accent hover:text-accent-hover font-medium"
                 >
-                  Edit
+                  edit
                 </Link>
                 <button
                   onClick={() => handleDelete(entry)}
-                  className="text-xs text-red-400 hover:text-red-300"
+                  className="text-xs text-error hover:opacity-80"
                 >
-                  Delete
+                  delete
                 </button>
               </div>
             </div>

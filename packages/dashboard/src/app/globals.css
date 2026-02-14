@@ -1,1 +1,118 @@
 @import "tailwindcss";
+
+@theme {
+  --color-surface: var(--surface);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--_accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-success: var(--_success);
+  --color-error: var(--_error);
+  --color-warning: var(--_warning);
+  --color-raised: var(--raised);
+  --color-pressed: var(--pressed);
+  --color-inset: var(--inset);
+}
+
+:root {
+  --surface: #f0f0f3;
+  --surface-secondary: #ffffff;
+  --surface-hover: #e8e8ec;
+  --border: #c8c8ce;
+  --border-subtle: #dcdce2;
+  --fg: #1a1a2e;
+  --fg-secondary: #4a4a5a;
+  --fg-muted: #8888a0;
+  --_accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-subtle: #eef2ff;
+  --_success: #059669;
+  --_error: #dc2626;
+  --_warning: #d97706;
+  --raised: #ffffff;
+  --pressed: #dddde3;
+  --inset: #e4e4ea;
+}
+
+.dark {
+  --surface: #0c0c14;
+  --surface-secondary: #14141f;
+  --surface-hover: #1e1e2e;
+  --border: #2a2a3e;
+  --border-subtle: #1e1e2e;
+  --fg: #e8e8f0;
+  --fg-secondary: #9898b0;
+  --fg-muted: #5c5c78;
+  --_accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-subtle: #1e1b4b;
+  --_success: #34d399;
+  --_error: #f87171;
+  --_warning: #fbbf24;
+  --raised: #1a1a28;
+  --pressed: #0a0a12;
+  --inset: #0a0a12;
+}
+
+/* 2.5D raised button */
+.btn-raised {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-bottom-width: 3px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  transition: all 0.1s ease;
+}
+.btn-raised:hover {
+  border-bottom-width: 2px;
+  transform: translateY(0.5px);
+}
+.btn-raised:active {
+  border-bottom-width: 1px;
+  transform: translateY(1px);
+  background: var(--pressed);
+}
+
+/* 2.5D accent button */
+.btn-accent {
+  background: var(--_accent);
+  color: #fff;
+  border: 1px solid transparent;
+  border-bottom: 3px solid rgba(0,0,0,0.25);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  transition: all 0.1s ease;
+}
+.btn-accent:hover {
+  background: var(--accent-hover);
+  border-bottom-width: 2px;
+  transform: translateY(0.5px);
+}
+.btn-accent:active {
+  border-bottom-width: 1px;
+  transform: translateY(1px);
+}
+
+/* Inset input fields */
+.input-inset {
+  background: var(--inset);
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+}
+.input-inset:focus {
+  outline: none;
+  border-color: var(--_accent);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.08), 0 0 0 2px color-mix(in srgb, var(--_accent) 20%, transparent);
+}
+
+/* Card with raised effect */
+.card-raised {
+  background: var(--surface-secondary);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}

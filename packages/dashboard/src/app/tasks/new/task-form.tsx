@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ScheduleInput } from '../../components/schedule-input';
+import { RunModal } from '../../components/run-modal';
 
 interface TaskFormProps {
   initial?: {
@@ -18,6 +19,8 @@ interface TaskFormProps {
   };
 }
 
+const MODELS = ['haiku', 'sonnet', 'opus'] as const;
+
 export function TaskForm({ initial }: TaskFormProps) {
   const router = useRouter();
   const isEdit = !!initial;
@@ -29,6 +32,7 @@ export function TaskForm({ initial }: TaskFormProps) {
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showRunModal, setShowRunModal] = useState(false);
 
   async function handleSave() {
     if (!name.trim() || !schedule.trim()) return;
@@ -79,98 +83,125 @@ export function TaskForm({ initial }: TaskFormProps) {
   }
 
   return (
-    <div className="max-w-3xl space-y-6">
-      {/* Name */}
-      <div>
-        <label className="block text-sm text-zinc-400 mb-1">Name</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
-          placeholder="e.g. aviv-daily-report"
-        />
-      </div>
-
-      {/* Schedule */}
-      <div>
-        <label className="block text-sm text-zinc-400 mb-1">Schedule</label>
-        <ScheduleInput value={schedule} onChange={setSchedule} />
-      </div>
-
-      {/* Prompt */}
-      <div>
-        <label className="block text-sm text-zinc-400 mb-1">Prompt</label>
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={14}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-zinc-600 resize-y"
-          placeholder="Define what the agent should do — role, instructions, and task..."
-        />
-        <p className="text-xs text-zinc-500 mt-1">
-          {'Supports template variables: {{today}}, {{tomorrow}}, {{date}}, {{datetime}}'}
-        </p>
-      </div>
-
-      {/* Model */}
-      {prompt.trim() && (
+    <div className="flex flex-col md:flex-row gap-6 h-[calc(100vh-8rem)]">
+      {/* Left panel — form fields */}
+      <div className="flex-1 flex flex-col gap-4 min-w-0">
         <div>
-          <label className="block text-sm text-zinc-400 mb-1">Model</label>
-          <select
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
-          >
-            <option value="haiku">Haiku</option>
-            <option value="sonnet">Sonnet</option>
-            <option value="opus">Opus</option>
-          </select>
-        </div>
-      )}
-
-      {/* Enabled */}
-      <div className="flex items-center gap-3">
-        <label className="text-sm text-zinc-400">Enabled</label>
-        <button
-          onClick={() => setEnabled(!enabled)}
-          className={`w-10 h-5 rounded-full relative transition-colors ${
-            enabled ? 'bg-green-600' : 'bg-zinc-700'
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-              enabled ? 'left-5' : 'left-0.5'
-            }`}
+          <label className="block text-xs text-fg-muted mb-1 uppercase tracking-wider">Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full input-inset rounded-lg px-3 py-2 text-sm"
+            placeholder="e.g. aviv-daily-report"
           />
-        </button>
+        </div>
+
+        <div>
+          <label className="block text-xs text-fg-muted mb-1 uppercase tracking-wider">Schedule</label>
+          <ScheduleInput value={schedule} onChange={setSchedule} />
+        </div>
+
+        <div className="flex-1 flex flex-col min-h-0">
+          <label className="block text-xs text-fg-muted mb-1 uppercase tracking-wider">Prompt</label>
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none"
+            placeholder="Define what the agent should do — role, instructions, and task..."
+          />
+          <p className="text-xs text-fg-muted mt-1">
+            {'Supports: {{today}}, {{tomorrow}}, {{date}}, {{datetime}}'}
+          </p>
+        </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-3 pt-4 border-t border-zinc-800">
-        <button
-          onClick={handleSave}
-          disabled={saving || !name.trim() || !schedule.trim()}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {saving ? 'Saving...' : isEdit ? 'Save' : 'Create'}
-        </button>
-        <button
-          onClick={() => router.push('/tasks')}
-          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
-        >
-          Back
-        </button>
-        {isEdit && (
+      {/* Right panel — settings + actions */}
+      <div className="w-full md:w-64 flex flex-col gap-4 shrink-0">
+        {/* Model pills */}
+        {prompt.trim() && (
+          <div>
+            <label className="block text-xs text-fg-muted mb-1.5 uppercase tracking-wider">Model</label>
+            <div className="flex rounded-lg overflow-hidden border border-border">
+              {MODELS.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setModel(m)}
+                  className={`flex-1 py-1.5 text-xs font-medium transition-all ${
+                    model === m
+                      ? 'bg-accent text-white shadow-sm'
+                      : 'bg-raised text-fg-secondary hover:bg-surface-hover'
+                  } ${m !== 'haiku' ? 'border-l border-border' : ''}`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Enabled toggle */}
+        <div className="flex items-center justify-between">
+          <label className="text-xs text-fg-muted uppercase tracking-wider">Enabled</label>
           <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="px-4 py-2 bg-red-900/50 hover:bg-red-800/50 text-red-400 rounded-lg text-sm ml-auto disabled:opacity-50 transition-colors"
+            onClick={() => setEnabled(!enabled)}
+            className={`w-10 h-5 rounded-full relative transition-colors ${
+              enabled ? 'bg-success' : 'bg-surface-hover'
+            }`}
           >
-            {deleting ? 'Deleting...' : 'Delete'}
+            <span
+              className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow-sm ${
+                enabled ? 'left-5' : 'left-0.5'
+              }`}
+            />
           </button>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex flex-col gap-2 pt-3 border-t border-border">
+          <div className="flex gap-2">
+            {isEdit && !!initial.prompt && (
+              <button
+                onClick={() => setShowRunModal(true)}
+                className="flex-1 btn-raised rounded-lg px-3 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
+              >
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+                Run
+              </button>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={saving || !name.trim() || !schedule.trim()}
+              className="flex-1 btn-accent rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? '...' : isEdit ? 'Save' : 'Create'}
+            </button>
+          </div>
+        </div>
+
+        {isEdit && (
+          <div className="mt-auto pt-4 border-t border-border">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="w-full px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-error rounded-lg text-sm disabled:opacity-50 transition-colors border border-red-500/20"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
         )}
       </div>
+
+      {isEdit && showRunModal && (
+        <RunModal
+          taskId={initial.id}
+          taskName={name}
+          open={showRunModal}
+          onClose={() => setShowRunModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -15,7 +15,7 @@ export default async function EditKnowledgePage({ params }: { params: Promise<{ 
   const entry = await getKnowledge(id);
 
   if (!entry) {
-    return <p className="text-zinc-400">Knowledge entry not found.</p>;
+    return <p className="text-fg-muted">Knowledge entry not found.</p>;
   }
 
   return (

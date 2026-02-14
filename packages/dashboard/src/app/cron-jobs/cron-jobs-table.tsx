@@ -102,14 +102,14 @@ export function CronJobsTable({ initialJobs }: { initialJobs: CronJob[] }) {
   }
 
   if (jobs.length === 0) {
-    return <p className="text-zinc-400">No cron jobs found.</p>;
+    return <p className="text-fg-muted">No cron jobs found.</p>;
   }
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-zinc-800 text-left text-zinc-400">
+          <tr className="border-b border-border text-left text-fg-secondary">
             <th className="py-3 px-4">Name</th>
             <th className="py-3 px-4">Schedule</th>
             <th className="py-3 px-4">Endpoint</th>
@@ -120,32 +120,32 @@ export function CronJobsTable({ initialJobs }: { initialJobs: CronJob[] }) {
         </thead>
         <tbody>
           {jobs.map((job) => (
-            <tr key={job.id} className="border-b border-zinc-800/50 hover:bg-zinc-900/50">
+            <tr key={job.id} className="border-b border-border-subtle hover:bg-surface-secondary">
               <td className="py-3 px-4 font-medium">{job.name}</td>
               <td className="py-3 px-4">
                 {editingId === job.id ? (
                   <div className="space-y-2">
                     {translatedCron ? (
                       <div className="flex gap-2 items-center">
-                        <code className="text-green-300 bg-zinc-800 px-2 py-1 rounded text-xs">
+                        <code className="text-success bg-surface-hover px-2 py-1 rounded text-xs">
                           {translatedCron}
                         </code>
-                        <span className="text-xs text-zinc-500">{describeSchedule(translatedCron)}</span>
+                        <span className="text-xs text-fg-muted">{describeSchedule(translatedCron)}</span>
                         <button
                           onClick={() => saveSchedule(job)}
-                          className="text-green-400 hover:text-green-300 text-xs"
+                          className="text-success hover:opacity-80 text-xs"
                         >
                           Save
                         </button>
                         <button
                           onClick={() => setTranslatedCron(null)}
-                          className="text-blue-400 hover:text-blue-300 text-xs"
+                          className="text-accent hover:text-accent-hover text-xs"
                         >
                           Edit
                         </button>
                         <button
                           onClick={cancelEdit}
-                          className="text-zinc-500 hover:text-zinc-300 text-xs"
+                          className="text-fg-muted hover:text-fg-secondary text-xs"
                         >
                           Cancel
                         </button>
@@ -157,7 +157,7 @@ export function CronJobsTable({ initialJobs }: { initialJobs: CronJob[] }) {
                           value={editInput}
                           onChange={(e) => setEditInput(e.target.value)}
                           placeholder="e.g. Every weekday at 5 AM"
-                          className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-sm w-56"
+                          className="bg-surface-hover border border-border rounded px-2 py-1 text-sm w-56"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !translating) translateInput();
                             if (e.key === 'Escape') cancelEdit();
@@ -166,31 +166,31 @@ export function CronJobsTable({ initialJobs }: { initialJobs: CronJob[] }) {
                           autoFocus
                         />
                         {translating ? (
-                          <span className="text-xs text-zinc-400 animate-pulse">Translating...</span>
+                          <span className="text-xs text-fg-muted animate-pulse">Translating...</span>
                         ) : (
                           <>
                             <button
                               onClick={translateInput}
-                              className="text-blue-400 hover:text-blue-300 text-xs"
+                              className="text-accent hover:text-accent-hover text-xs"
                             >
                               Go
                             </button>
                             <button
                               onClick={cancelEdit}
-                              className="text-zinc-500 hover:text-zinc-300 text-xs"
+                              className="text-fg-muted hover:text-fg-secondary text-xs"
                             >
                               Cancel
                             </button>
                           </>
                         )}
-                        {aiError && <span className="text-xs text-red-400">{aiError}</span>}
+                        {aiError && <span className="text-xs text-error">{aiError}</span>}
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="group/schedule">
                     <div className="flex gap-2 items-center">
-                      <code className="text-zinc-300 bg-zinc-800 px-2 py-0.5 rounded text-xs">
+                      <code className="text-fg-secondary bg-surface-hover px-2 py-0.5 rounded text-xs">
                         {job.schedule}
                       </code>
                       <button
@@ -200,27 +200,27 @@ export function CronJobsTable({ initialJobs }: { initialJobs: CronJob[] }) {
                           setTranslatedCron(null);
                           setAiError(null);
                         }}
-                        className="text-xs text-blue-400 hover:text-blue-300 opacity-0 group-hover/schedule:opacity-100 transition-opacity"
+                        className="text-xs text-accent hover:text-accent-hover opacity-0 group-hover/schedule:opacity-100 transition-opacity"
                       >
                         Edit
                       </button>
                     </div>
-                    <div className="text-xs text-zinc-400 mt-1">{describeSchedule(job.schedule)}</div>
+                    <div className="text-xs text-fg-secondary mt-1">{describeSchedule(job.schedule)}</div>
                     {job.enabled && nextRun(job.schedule) && (
-                      <div className="text-xs text-green-400/70 mt-0.5">Next: {nextRun(job.schedule)}</div>
+                      <div className="text-xs text-success/70 mt-0.5">Next: {nextRun(job.schedule)}</div>
                     )}
                   </div>
                 )}
               </td>
-              <td className="py-3 px-4 text-zinc-400">{job.endpoint}</td>
+              <td className="py-3 px-4 text-fg-secondary">{job.endpoint}</td>
               <td className="py-3 px-4">
-                <span className="text-xs bg-zinc-800 px-2 py-0.5 rounded">{job.method}</span>
+                <span className="text-xs bg-surface-hover px-2 py-0.5 rounded">{job.method}</span>
               </td>
               <td className="py-3 px-4">
                 <button
                   onClick={() => toggleEnabled(job)}
                   className={`w-10 h-5 rounded-full relative transition-colors ${
-                    job.enabled ? 'bg-green-600' : 'bg-zinc-700'
+                    job.enabled ? 'bg-success' : 'bg-surface-hover'
                   }`}
                 >
                   <span
@@ -239,13 +239,13 @@ export function CronJobsTable({ initialJobs }: { initialJobs: CronJob[] }) {
                       setTranslatedCron(null);
                       setAiError(null);
                     }}
-                    className="text-xs text-blue-400 hover:text-blue-300"
+                    className="text-xs text-accent hover:text-accent-hover"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => deleteJob(job)}
-                    className="text-xs text-red-400 hover:text-red-300"
+                    className="text-xs text-error hover:opacity-80"
                   >
                     Delete
                   </button>

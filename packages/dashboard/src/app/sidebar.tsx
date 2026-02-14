@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { ThemeToggle } from './components/theme-toggle';
 
 const links = [
-  { href: '/tasks', label: 'Tasks' },
-  { href: '/runs', label: 'Runs' },
-  { href: '/knowledge', label: 'Knowledge' },
-  { href: '/messages', label: 'Messages' },
+  { href: '/tasks', label: 'tasks' },
+  { href: '/runs', label: 'runs' },
+  { href: '/knowledge', label: 'knowledge' },
+  { href: '/messages', label: 'messages' },
 ];
 
 export function Sidebar() {
@@ -20,7 +21,7 @@ export function Sidebar() {
       {/* Hamburger button — mobile only */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed top-4 left-4 z-50 md:hidden bg-zinc-800 rounded-lg p-2"
+        className="fixed top-4 left-4 z-50 md:hidden btn-raised rounded-lg p-2"
         aria-label="Open menu"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -31,32 +32,35 @@ export function Sidebar() {
       {/* Backdrop — mobile only */}
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
           onClick={() => setOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-56 bg-zinc-900 border-r border-zinc-800 p-4 flex flex-col gap-1 transition-transform md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 w-52 bg-surface-secondary border-r border-border p-3 flex flex-col gap-0.5 transition-transform md:static md:translate-x-0 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <h1 className="text-lg font-semibold px-4 py-3 mb-2 text-white">Parent AI</h1>
+        <h1 className="text-sm font-bold px-3 py-3 mb-1 text-fg tracking-wider uppercase">parent_ai</h1>
         {links.map((link) => (
           <Link
             key={link.href}
             href={link.href}
             onClick={() => setOpen(false)}
-            className={`block px-4 py-2 rounded-lg transition-colors ${
+            className={`block px-3 py-1.5 rounded text-sm transition-all ${
               pathname.startsWith(link.href)
-                ? 'bg-zinc-800 text-white'
-                : 'text-zinc-300 hover:text-white hover:bg-zinc-800'
+                ? 'bg-accent-subtle text-accent font-medium border border-border'
+                : 'text-fg-secondary hover:text-fg hover:bg-surface-hover'
             }`}
           >
-            {link.label}
+            /{link.label}
           </Link>
         ))}
+        <div className="mt-auto px-1">
+          <ThemeToggle />
+        </div>
       </aside>
     </>
   );

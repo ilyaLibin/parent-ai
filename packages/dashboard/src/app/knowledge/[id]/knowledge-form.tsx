@@ -62,38 +62,38 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <label className="block text-sm text-zinc-400 mb-1">Name</label>
+        <label className="block text-xs text-fg-muted mb-1 uppercase tracking-wider">Name</label>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-zinc-600"
+          className="w-full input-inset rounded-lg px-3 py-2 text-sm"
           placeholder="e.g. aviv_school_schedule"
         />
       </div>
 
       <div>
-        <label className="block text-sm text-zinc-400 mb-1">Content</label>
+        <label className="block text-xs text-fg-muted mb-1 uppercase tracking-wider">Content</label>
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
           rows={20}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-zinc-600 resize-y"
+          className="w-full input-inset rounded-lg px-3 py-2 text-sm resize-y"
           placeholder="Knowledge content (markdown supported)..."
         />
       </div>
 
-      <div className="flex gap-3 pt-4 border-t border-zinc-800">
+      <div className="flex gap-3 pt-4 border-t border-border">
         <button
           onClick={handleSave}
           disabled={saving || !name.trim() || !content.trim()}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn-accent rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {saving ? 'Saving...' : isEdit ? 'Save' : 'Create'}
+          {saving ? '...' : isEdit ? 'Save' : 'Create'}
         </button>
         <button
           onClick={() => router.push('/knowledge')}
-          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-colors"
+          className="btn-raised rounded-lg px-4 py-2 text-sm"
         >
           Back
         </button>
@@ -101,7 +101,7 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className="px-4 py-2 bg-red-900/50 hover:bg-red-800/50 text-red-400 rounded-lg text-sm ml-auto disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-error/10 hover:bg-error/20 text-error rounded-lg text-sm ml-auto disabled:opacity-50 transition-colors border border-error/20"
           >
             {deleting ? 'Deleting...' : 'Delete'}
           </button>
