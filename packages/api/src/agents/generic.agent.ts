@@ -37,7 +37,9 @@ function injectTemplateVars(text: string): string {
     .replace(/\{\{today\}\}/g, `יום ${todayDay}`)
     .replace(/\{\{tomorrow\}\}/g, `יום ${tomorrowDay}`)
     .replace(/\{\{date\}\}/g, now.toLocaleDateString('he-IL'))
-    .replace(/\{\{datetime\}\}/g, now.toLocaleString('he-IL'));
+    .replace(/\{\{datetime\}\}/g, now.toLocaleString('he-IL'))
+    .replace(/\[@([^\]]+)\]\(group:([^)]+)\)/g, 'WhatsApp group "$1" (ID: $2)')
+    .replace(/\[@([^\]]+)\]\(knowledge:(\d+)\)/g, 'knowledge document "$1" (ID: $2)');
 }
 
 export async function runGenericAgent(opts: {

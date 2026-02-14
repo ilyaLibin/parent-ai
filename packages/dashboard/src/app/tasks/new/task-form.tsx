@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ScheduleInput } from '../../components/schedule-input';
+import { MentionInput } from '../../components/mention-input';
 import { RunModal } from '../../components/run-modal';
 
 interface TaskFormProps {
@@ -104,14 +105,14 @@ export function TaskForm({ initial }: TaskFormProps) {
 
         <div className="flex-1 flex flex-col min-h-0">
           <label className="block text-xs text-fg-muted mb-1 uppercase tracking-wider">Prompt</label>
-          <textarea
+          <MentionInput
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={setPrompt}
             className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none"
-            placeholder="Define what the agent should do — role, instructions, and task..."
+            placeholder="Define what the agent should do — type @ to reference groups or knowledge..."
           />
           <p className="text-xs text-fg-muted mt-1">
-            {'Supports: {{today}}, {{tomorrow}}, {{date}}, {{datetime}}'}
+            {'Supports: {{today}}, {{tomorrow}}, {{date}}, {{datetime}}, @mentions'}
           </p>
         </div>
       </div>
