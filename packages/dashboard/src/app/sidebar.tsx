@@ -10,6 +10,7 @@ const links = [
   { href: '/runs', label: 'runs' },
   { href: '/knowledge', label: 'knowledge' },
   { href: '/messages', label: 'messages' },
+  { href: '/logs', label: 'logs' },
 ];
 
 export function Sidebar() {
@@ -58,7 +59,7 @@ export function Sidebar() {
             /{link.label}
           </Link>
         ))}
-        <div className="mt-auto px-1">
+        <div className="mt-auto">
           <ThemeToggle />
         </div>
       </aside>

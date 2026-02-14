@@ -22,7 +22,7 @@ export default async function KnowledgePage() {
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6">Knowledge</h2>
-      <KnowledgeList initialEntries={entries} />
+      <KnowledgeList entries={entries} />
     </div>
   );
 }
