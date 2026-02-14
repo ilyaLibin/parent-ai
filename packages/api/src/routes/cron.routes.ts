@@ -35,8 +35,8 @@ cron.post('/cron-jobs', async (c) => {
   if (!body.name || !body.schedule) {
     return c.json({ error: 'name and schedule are required' }, 400);
   }
-  if (!body.system_prompt && !body.endpoint) {
-    return c.json({ error: 'Either system_prompt (agent task) or endpoint (legacy task) is required' }, 400);
+  if (!body.prompt && !body.endpoint) {
+    return c.json({ error: 'Either prompt (agent task) or endpoint (legacy task) is required' }, 400);
   }
   const job = createCronJob(body);
   return c.json(job, 201);

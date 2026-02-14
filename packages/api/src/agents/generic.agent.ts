@@ -42,8 +42,7 @@ function injectTemplateVars(text: string): string {
 
 export async function runGenericAgent(opts: {
   taskId: number;
-  systemPrompt: string;
-  userPrompt: string;
+  prompt: string;
   model?: string | null;
 }): Promise<AgentResult> {
   const modelKey = opts.model || 'sonnet';
@@ -55,11 +54,10 @@ export async function runGenericAgent(opts: {
   const steps: StepEntry[] = [];
   const tokenUsage = { input_tokens: 0, output_tokens: 0 };
 
-  const system = injectTemplateVars(opts.systemPrompt);
-  const userPrompt = injectTemplateVars(opts.userPrompt);
+  const prompt = injectTemplateVars(opts.prompt);
 
   const messages: Anthropic.MessageParam[] = [
-    { role: 'user', content: userPrompt },
+    { role: 'user', content: prompt },
   ];
 
   let resultText: string | null = null;
@@ -71,7 +69,6 @@ export async function runGenericAgent(opts: {
       const response = await anthropic.messages.create({
         model: modelId,
         max_tokens: 4096,
-        system,
         tools: toolDefinitions,
         messages,
       });
@@ -79,15 +76,10 @@ export async function runGenericAgent(opts: {
       tokenUsage.input_tokens += response.usage.input_tokens;
       tokenUsage.output_tokens += response.usage.output_tokens;
 
-      // Collect text and tool_use blocks from response
-      const toolUseBlocks: Anthropic.ContentBlockParam[] = [];
-
       for (const block of response.content) {
         if (block.type === 'text') {
           steps.push({ type: 'text', content: block.text });
           resultText = block.text;
-        } else if (block.type === 'tool_use') {
-          toolUseBlocks.push(block);
         }
       }
 

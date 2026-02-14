@@ -8,13 +8,12 @@ task.post('/task/:id/execute', async (c) => {
   const id = Number(c.req.param('id'));
   const job = getCronJob(id);
   if (!job) return c.json({ error: 'Task not found' }, 404);
-  if (!job.system_prompt) return c.json({ error: 'Task has no system_prompt — not an agent task' }, 400);
+  if (!job.prompt) return c.json({ error: 'Task has no prompt — not an agent task' }, 400);
 
   console.log(`[api] Executing task "${job.name}" (id=${id})...`);
   const result = await runGenericAgent({
     taskId: id,
-    systemPrompt: job.system_prompt,
-    userPrompt: job.user_prompt || 'Execute the task as described in the system prompt.',
+    prompt: job.prompt,
     model: job.model,
   });
 

@@ -12,8 +12,7 @@ export interface Task {
   method: string;
   body: string | null;
   enabled: boolean;
-  system_prompt: string | null;
-  user_prompt: string | null;
+  prompt: string | null;
   model: string | null;
   created_at: number;
   updated_at: number;

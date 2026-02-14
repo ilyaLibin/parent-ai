@@ -9,8 +9,7 @@ interface TaskFormProps {
     id: number;
     name: string;
     schedule: string;
-    system_prompt: string | null;
-    user_prompt: string | null;
+    prompt: string | null;
     model: string | null;
     enabled: boolean;
     endpoint: string;
@@ -25,8 +24,7 @@ export function TaskForm({ initial }: TaskFormProps) {
 
   const [name, setName] = useState(initial?.name || '');
   const [schedule, setSchedule] = useState(initial?.schedule || '0 * * * *');
-  const [systemPrompt, setSystemPrompt] = useState(initial?.system_prompt || '');
-  const [userPrompt, setUserPrompt] = useState(initial?.user_prompt || '');
+  const [prompt, setPrompt] = useState(initial?.prompt || '');
   const [model, setModel] = useState(initial?.model || 'sonnet');
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [saving, setSaving] = useState(false);
@@ -39,9 +37,8 @@ export function TaskForm({ initial }: TaskFormProps) {
     const payload = {
       name: name.trim(),
       schedule,
-      system_prompt: systemPrompt.trim() || null,
-      user_prompt: userPrompt.trim() || null,
-      model: systemPrompt.trim() ? model : null,
+      prompt: prompt.trim() || null,
+      model: prompt.trim() ? model : null,
       enabled,
       endpoint: initial?.endpoint || '',
       method: initial?.method || 'POST',
@@ -101,35 +98,23 @@ export function TaskForm({ initial }: TaskFormProps) {
         <ScheduleInput value={schedule} onChange={setSchedule} />
       </div>
 
-      {/* System Prompt */}
+      {/* Prompt */}
       <div>
-        <label className="block text-sm text-zinc-400 mb-1">System Prompt</label>
+        <label className="block text-sm text-zinc-400 mb-1">Prompt</label>
         <textarea
-          value={systemPrompt}
-          onChange={(e) => setSystemPrompt(e.target.value)}
-          rows={12}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={14}
           className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-zinc-600 resize-y"
-          placeholder="Define the agent's behavior and instructions..."
+          placeholder="Define what the agent should do — role, instructions, and task..."
         />
         <p className="text-xs text-zinc-500 mt-1">
           {'Supports template variables: {{today}}, {{tomorrow}}, {{date}}, {{datetime}}'}
         </p>
       </div>
 
-      {/* User Prompt */}
-      <div>
-        <label className="block text-sm text-zinc-400 mb-1">User Prompt (optional)</label>
-        <textarea
-          value={userPrompt}
-          onChange={(e) => setUserPrompt(e.target.value)}
-          rows={4}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-zinc-600 resize-y"
-          placeholder="The initial user message to start the agent..."
-        />
-      </div>
-
       {/* Model */}
-      {systemPrompt.trim() && (
+      {prompt.trim() && (
         <div>
           <label className="block text-sm text-zinc-400 mb-1">Model</label>
           <select

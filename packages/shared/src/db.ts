@@ -70,8 +70,7 @@ db.exec(`
     method TEXT NOT NULL DEFAULT 'POST',
     body TEXT,
     enabled INTEGER NOT NULL DEFAULT 1,
-    system_prompt TEXT,
-    user_prompt TEXT,
+    prompt TEXT,
     model TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -104,9 +103,15 @@ db.exec(`
 // Migrate: add new columns to cron_jobs if missing (for existing databases)
 const cronColumns = db.pragma('table_info(cron_jobs)') as { name: string }[];
 const cronColNames = new Set(cronColumns.map((c) => c.name));
-if (!cronColNames.has('system_prompt')) db.exec('ALTER TABLE cron_jobs ADD COLUMN system_prompt TEXT');
-if (!cronColNames.has('user_prompt')) db.exec('ALTER TABLE cron_jobs ADD COLUMN user_prompt TEXT');
+if (!cronColNames.has('prompt')) db.exec('ALTER TABLE cron_jobs ADD COLUMN prompt TEXT');
 if (!cronColNames.has('model')) db.exec('ALTER TABLE cron_jobs ADD COLUMN model TEXT');
+
+// Migrate: merge system_prompt + user_prompt → prompt (one-time)
+if (cronColNames.has('system_prompt')) {
+  // Concatenate system_prompt and user_prompt into prompt for any rows that have system_prompt but no prompt
+  db.exec(`UPDATE cron_jobs SET prompt = COALESCE(system_prompt, '') || CASE WHEN user_prompt IS NOT NULL THEN char(10) || char(10) || user_prompt ELSE '' END WHERE system_prompt IS NOT NULL AND (prompt IS NULL OR prompt = '')`);
+  // SQLite doesn't support DROP COLUMN before 3.35.0 — just leave old columns, they'll be ignored
+}
 
 // --- Seeding (runs once, tracked via _meta table) ---
 db.exec(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)`);
@@ -125,7 +130,7 @@ const shouldSeed = !db.prepare(`SELECT value FROM _meta WHERE key = 'seeded_v2'`
 if (shouldSeed) {
   const now = Date.now();
 
-  const AVIV_DAILY_REPORT_SYSTEM_PROMPT = `You are a school assistant for Aviv's parents. Your job is to:
+  const AVIV_DAILY_REPORT_PROMPT = `You are a school assistant for Aviv's parents. Your job is to:
 1. Fetch recent messages from Aviv's school WhatsApp groups (group IDs: 120363331200450674@g.us, 120363327802106026@g.us)
 2. If any messages contain images (type "image"), transcribe them — they often contain homework assignments or important notices
 3. Look up the school schedule from the knowledge base (name: "aviv_school_schedule")
@@ -147,23 +152,23 @@ The Telegram message should include:
 - ✅ *פעולות נדרשות* — action items for parents
 
 Keep it short, clear, and in Hebrew. Use bullet points. Skip empty sections.
-Use Telegram Markdown: *bold* for headers.`;
+Use Telegram Markdown: *bold* for headers.
 
-  const AVIV_DAILY_REPORT_USER_PROMPT = `Generate the daily school report for tomorrow ({{tomorrow}}). Start by fetching messages from the last 24 hours from Aviv's school groups, then look up the schedule from knowledge.`;
+Generate the daily school report for tomorrow ({{tomorrow}}). Start by fetching messages from the last 24 hours from Aviv's school groups, then look up the schedule from knowledge.`;
 
-  const TODAYS_SCHEDULE_SYSTEM_PROMPT = `You are a school assistant for Aviv's parents. Aviv is in class ב1 (2nd grade).
+  const TODAYS_SCHEDULE_PROMPT = `You are a school assistant for Aviv's parents. Aviv is in class ב1 (2nd grade).
 Look up the school schedule from the knowledge base (name: "aviv_school_schedule"), extract today's lessons, and send a short Telegram message in Hebrew.
 
 Format the message as a clear list with lesson number, subject, and teacher.
 Add a short friendly greeting at the top. Keep it concise.
-Use Telegram Markdown: *bold* for the header.`;
+Use Telegram Markdown: *bold* for the header.
 
-  const TODAYS_SCHEDULE_USER_PROMPT = `Today is {{today}} ({{date}}). Look up the school schedule from knowledge and send today's schedule to Telegram.`;
+Today is {{today}} ({{date}}). Look up the school schedule from knowledge and send today's schedule to Telegram.`;
 
   db.prepare(`
-    INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, system_prompt, user_prompt, model, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run('aviv-daily-report', '0 20 * * 0-4', '', 'POST', null, 0, AVIV_DAILY_REPORT_SYSTEM_PROMPT, AVIV_DAILY_REPORT_USER_PROMPT, 'sonnet', now, now);
+    INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, prompt, model, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('aviv-daily-report', '0 20 * * 0-4', '', 'POST', null, 0, AVIV_DAILY_REPORT_PROMPT, 'sonnet', now, now);
 
   db.prepare(`
     INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
@@ -171,9 +176,9 @@ Use Telegram Markdown: *bold* for the header.`;
   `).run('daily-summary', '0 20 * * *', '/summary/daily', 'POST', null, 0, now, now);
 
   db.prepare(`
-    INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, system_prompt, user_prompt, model, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run('todays-schedule', '40 16 * * *', '', 'POST', null, 1, TODAYS_SCHEDULE_SYSTEM_PROMPT, TODAYS_SCHEDULE_USER_PROMPT, 'sonnet', now, now);
+    INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, prompt, model, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('todays-schedule', '40 16 * * *', '', 'POST', null, 1, TODAYS_SCHEDULE_PROMPT, 'sonnet', now, now);
 
   db.prepare(`INSERT INTO _meta (key, value) VALUES (?, ?)`).run('seeded_v2', String(now));
 }
@@ -193,43 +198,9 @@ try {
   // Knowledge dir may not exist in all environments
 }
 
-// Migrate existing agent-based jobs to use system_prompt (runs every time, idempotent)
-{
-  const AVIV_PROMPT = `You are a school assistant for Aviv's parents. Your job is to:
-1. Fetch recent messages from Aviv's school WhatsApp groups (group IDs: 120363331200450674@g.us, 120363327802106026@g.us)
-2. If any messages contain images (type "image"), transcribe them — they often contain homework assignments or important notices
-3. Look up the school schedule from the knowledge base (name: "aviv_school_schedule")
-4. Combine all information with the school schedule to generate a clear, actionable daily report in Hebrew
-5. Send the report via Telegram
-
-## Context
-- Aviv is in class ב1 (2nd grade)
-- His main teacher is Vered (ורד)
-- Today is: {{today}}
-- Tomorrow is: {{tomorrow}}
-
-## Report format (in Hebrew)
-The Telegram message should include:
-- 📚 *שיעורי בית* — homework assignments found in messages or images
-- 📋 *מערכת שעות למחר* — tomorrow's lessons from the schedule
-- 📌 *דברים להביא* — things to bring to school
-- ⚠️ *הודעות חשובות* — important announcements or schedule changes
-- ✅ *פעולות נדרשות* — action items for parents
-
-Keep it short, clear, and in Hebrew. Use bullet points. Skip empty sections.
-Use Telegram Markdown: *bold* for headers.`;
-
-  const TODAYS_PROMPT = `You are a school assistant for Aviv's parents. Aviv is in class ב1 (2nd grade).
-Look up the school schedule from the knowledge base (name: "aviv_school_schedule"), extract today's lessons, and send a short Telegram message in Hebrew.
-
-Format the message as a clear list with lesson number, subject, and teacher.
-Add a short friendly greeting at the top. Keep it concise.
-Use Telegram Markdown: *bold* for the header.`;
-
-  db.prepare(`UPDATE cron_jobs SET system_prompt = ?, user_prompt = ?, model = COALESCE(model, 'sonnet') WHERE name = 'aviv-daily-report' AND system_prompt IS NULL`)
-    .run(AVIV_PROMPT, `Generate the daily school report for tomorrow ({{tomorrow}}). Start by fetching messages from the last 24 hours from Aviv's school groups, then look up the schedule from knowledge.`);
-  db.prepare(`UPDATE cron_jobs SET system_prompt = ?, user_prompt = ?, model = COALESCE(model, 'sonnet') WHERE name = 'todays-schedule' AND system_prompt IS NULL`)
-    .run(TODAYS_PROMPT, `Today is {{today}} ({{date}}). Look up the school schedule from knowledge and send today's schedule to Telegram.`);
+// Migrate existing agent-based jobs that only have system_prompt but no prompt (runs every time, idempotent)
+if (cronColNames.has('system_prompt')) {
+  db.exec(`UPDATE cron_jobs SET prompt = COALESCE(system_prompt, '') || CASE WHEN user_prompt IS NOT NULL THEN char(10) || char(10) || user_prompt ELSE '' END WHERE system_prompt IS NOT NULL AND (prompt IS NULL OR prompt = '')`);
 }
 
 export interface Group {
@@ -477,8 +448,7 @@ export interface CronJob {
   method: string;
   body: string | null;
   enabled: boolean;
-  system_prompt: string | null;
-  user_prompt: string | null;
+  prompt: string | null;
   model: string | null;
   created_at: number;
   updated_at: number;
@@ -492,8 +462,7 @@ interface CronJobRow {
   method: string;
   body: string | null;
   enabled: number;
-  system_prompt: string | null;
-  user_prompt: string | null;
+  prompt: string | null;
   model: string | null;
   created_at: number;
   updated_at: number;
@@ -515,16 +484,16 @@ export function getCronJob(id: number): CronJob | undefined {
   return row ? rowToCronJob(row) : undefined;
 }
 
-export function createCronJob(job: { name: string; schedule: string; endpoint?: string; method?: string; body?: string | null; enabled?: boolean; system_prompt?: string | null; user_prompt?: string | null; model?: string | null }): CronJob {
+export function createCronJob(job: { name: string; schedule: string; endpoint?: string; method?: string; body?: string | null; enabled?: boolean; prompt?: string | null; model?: string | null }): CronJob {
   const now = Date.now();
   const result = db.prepare(`
-    INSERT INTO cron_jobs (name, schedule, endpoint, method, body, enabled, system_prompt, user_prompt, model, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(job.name, job.schedule, job.endpoint || '', job.method || 'POST', job.body ?? null, job.enabled !== false ? 1 : 0, job.system_prompt ?? null, job.user_prompt ?? null, job.model ?? null, now, now);
+    INSERT INTO cron_jobs (name, schedule, endpoint, method, body, enabled, prompt, model, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(job.name, job.schedule, job.endpoint || '', job.method || 'POST', job.body ?? null, job.enabled !== false ? 1 : 0, job.prompt ?? null, job.model ?? null, now, now);
   return getCronJob(result.lastInsertRowid as number)!;
 }
 
-export function updateCronJobById(id: number, updates: Partial<{ name: string; schedule: string; endpoint: string; method: string; body: string | null; enabled: boolean; system_prompt: string | null; user_prompt: string | null; model: string | null }>): CronJob | undefined {
+export function updateCronJobById(id: number, updates: Partial<{ name: string; schedule: string; endpoint: string; method: string; body: string | null; enabled: boolean; prompt: string | null; model: string | null }>): CronJob | undefined {
   const existing = getCronJob(id);
   if (!existing) return undefined;
 
@@ -537,8 +506,7 @@ export function updateCronJobById(id: number, updates: Partial<{ name: string; s
   if (updates.method !== undefined) { fields.push('method = ?'); values.push(updates.method); }
   if (updates.body !== undefined) { fields.push('body = ?'); values.push(updates.body); }
   if (updates.enabled !== undefined) { fields.push('enabled = ?'); values.push(updates.enabled ? 1 : 0); }
-  if (updates.system_prompt !== undefined) { fields.push('system_prompt = ?'); values.push(updates.system_prompt); }
-  if (updates.user_prompt !== undefined) { fields.push('user_prompt = ?'); values.push(updates.user_prompt); }
+  if (updates.prompt !== undefined) { fields.push('prompt = ?'); values.push(updates.prompt); }
   if (updates.model !== undefined) { fields.push('model = ?'); values.push(updates.model); }
 
   if (fields.length === 0) return existing;

@@ -11,7 +11,7 @@ interface CronJob {
   method: string;
   body: string | null;
   enabled: boolean;
-  system_prompt: string | null;
+  prompt: string | null;
 }
 
 function matchesCurrentMinute(schedule: string): boolean {
@@ -33,7 +33,7 @@ async function fetchEnabledJobs(): Promise<CronJob[]> {
 }
 
 async function fireJob(job: CronJob): Promise<void> {
-  if (job.system_prompt) {
+  if (job.prompt) {
     // Agent-based task: execute via generic agent
     const url = `${API_BASE}/task/${job.id}/execute`;
     console.log(`[cron] ${job.name} -> POST /task/${job.id}/execute (agent)`);

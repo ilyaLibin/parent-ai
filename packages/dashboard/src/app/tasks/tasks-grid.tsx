@@ -72,7 +72,7 @@ export function TasksGrid({ initialTasks }: { initialTasks: Task[] }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {tasks.map((task) => {
-            const isAgent = !!task.system_prompt;
+            const isAgent = !!task.prompt;
             return (
               <div
                 key={task.id}
