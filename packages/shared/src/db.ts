@@ -106,6 +106,33 @@ const cronColNames = new Set(cronColumns.map((c) => c.name));
 if (!cronColNames.has('prompt')) db.exec('ALTER TABLE cron_jobs ADD COLUMN prompt TEXT');
 if (!cronColNames.has('model')) db.exec('ALTER TABLE cron_jobs ADD COLUMN model TEXT');
 
+// Migrate: add tracked column to groups
+const groupColumns = db.pragma('table_info(groups)') as { name: string }[];
+const groupColNames = new Set(groupColumns.map((c) => c.name));
+if (!groupColNames.has('tracked')) {
+  db.exec('ALTER TABLE groups ADD COLUMN tracked INTEGER NOT NULL DEFAULT 0');
+  // Only track groups that actually have messages
+  db.exec('UPDATE groups SET tracked = 1 WHERE id IN (SELECT DISTINCT group_id FROM messages)');
+}
+
+// Seed tracked groups from env var (every startup)
+const envTrackedIds = (process.env.TRACKED_GROUP_IDS || '')
+  .split(',')
+  .map(id => id.trim())
+  .filter(Boolean);
+
+if (envTrackedIds.length > 0) {
+  const seedTracked = db.prepare(`
+    INSERT INTO groups (id, name, tracked, updated_at)
+    VALUES (?, ?, 1, ?)
+    ON CONFLICT(id) DO UPDATE SET tracked = 1
+  `);
+  const now = Date.now();
+  for (const id of envTrackedIds) {
+    seedTracked.run(id, id, now);
+  }
+}
+
 // Migrate: merge system_prompt + user_prompt → prompt (one-time)
 if (cronColNames.has('system_prompt')) {
   // Concatenate system_prompt and user_prompt into prompt for any rows that have system_prompt but no prompt
@@ -206,7 +233,19 @@ if (cronColNames.has('system_prompt')) {
 export interface Group {
   id: string;
   name: string;
+  tracked: boolean;
   updated_at: number;
+}
+
+interface GroupRow {
+  id: string;
+  name: string;
+  tracked: number;
+  updated_at: number;
+}
+
+function rowToGroup(row: GroupRow): Group {
+  return { ...row, tracked: row.tracked === 1 };
 }
 
 export interface Message {
@@ -262,23 +301,36 @@ export function logConnectionEvent(event: string, details?: string): void {
 }
 
 export function getGroups(): Group[] {
-  return db.prepare('SELECT * FROM groups ORDER BY name').all() as Group[];
+  return (db.prepare('SELECT * FROM groups ORDER BY name').all() as GroupRow[]).map(rowToGroup);
 }
 
 export function getGroupsByIds(ids: string[]): Group[] {
   if (ids.length === 0) return [];
   const placeholders = ids.map(() => '?').join(',');
-  return db.prepare(`SELECT * FROM groups WHERE id IN (${placeholders}) ORDER BY name`).all(...ids) as Group[];
+  return (db.prepare(`SELECT * FROM groups WHERE id IN (${placeholders}) ORDER BY name`).all(...ids) as GroupRow[]).map(rowToGroup);
 }
 
 export function getGroupByName(name: string): Group | undefined {
-  return db.prepare(
+  const row = db.prepare(
     'SELECT * FROM groups WHERE LOWER(name) LIKE LOWER(?)'
-  ).get(`%${name}%`) as Group | undefined;
+  ).get(`%${name}%`) as GroupRow | undefined;
+  return row ? rowToGroup(row) : undefined;
 }
 
 export function getGroupById(id: string): Group | undefined {
-  return db.prepare('SELECT * FROM groups WHERE id = ?').get(id) as Group | undefined;
+  const row = db.prepare('SELECT * FROM groups WHERE id = ?').get(id) as GroupRow | undefined;
+  return row ? rowToGroup(row) : undefined;
+}
+
+export function isGroupTracked(groupId: string): boolean {
+  const row = db.prepare('SELECT tracked FROM groups WHERE id = ?').get(groupId) as { tracked: number } | undefined;
+  return row?.tracked === 1;
+}
+
+export function setGroupTracked(groupId: string, tracked: boolean): Group | undefined {
+  const result = db.prepare('UPDATE groups SET tracked = ? WHERE id = ?').run(tracked ? 1 : 0, groupId);
+  if (result.changes === 0) return undefined;
+  return getGroupById(groupId);
 }
 
 // Resolve group by ID or name - ID takes precedence if it looks like a group ID

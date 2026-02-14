@@ -6,6 +6,7 @@ import {
   getConnectionGaps,
   getDailyMessageCounts,
   resolveGroup,
+  setGroupTracked,
 } from '@parent-ai/shared';
 
 const whatsapp = new Hono();
@@ -16,6 +17,18 @@ whatsapp.get('/groups', (c) => {
     messageCount: getMessageCount(g.id),
   }));
   return c.json({ groups });
+});
+
+whatsapp.put('/groups/tracked', async (c) => {
+  const body = await c.req.json<{ groupId: string; tracked: boolean }>();
+  if (!body.groupId || typeof body.tracked !== 'boolean') {
+    return c.json({ success: false, error: 'Missing groupId or tracked (boolean)' }, 400);
+  }
+  const group = setGroupTracked(body.groupId, body.tracked);
+  if (!group) {
+    return c.json({ success: false, error: 'Group not found' }, 404);
+  }
+  return c.json({ success: true, group });
 });
 
 whatsapp.get('/status', (c) => {

@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic';
 export interface Group {
   id: string;
   name: string;
+  tracked: boolean;
   updated_at: number;
   messageCount: number;
 }

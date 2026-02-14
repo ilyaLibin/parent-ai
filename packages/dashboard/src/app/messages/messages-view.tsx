@@ -108,6 +108,27 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
   const [loading, setLoading] = useState(false);
   const [daySortAsc, setDaySortAsc] = useState(false);
   const [filteredDailyCounts, setFilteredDailyCounts] = useState<DailyCount[]>(initialDailyCounts);
+  const [groupList, setGroupList] = useState<Group[]>(groups);
+
+  async function toggleTracking(e: React.MouseEvent, group: Group) {
+    e.stopPropagation();
+    const newTracked = !group.tracked;
+    // Optimistic update
+    setGroupList((prev) => prev.map((g) => g.id === group.id ? { ...g, tracked: newTracked } : g));
+    try {
+      const res = await fetch('/api/groups/tracked', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: group.id, tracked: newTracked }),
+      });
+      if (!res.ok) {
+        // Revert on failure
+        setGroupList((prev) => prev.map((g) => g.id === group.id ? { ...g, tracked: !newTracked } : g));
+      }
+    } catch {
+      setGroupList((prev) => prev.map((g) => g.id === group.id ? { ...g, tracked: !newTracked } : g));
+    }
+  }
 
   // The active group IDs for display: if previewing one group, show just that; otherwise show checked
   const activeGroupIds = useMemo(() => {
@@ -171,7 +192,7 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
       if (gm.messageCount > 0) apiOrderMap.set(gm.groupId, i);
     });
 
-    return [...groups].sort((a, b) => {
+    return [...groupList].sort((a, b) => {
       const aHas = a.messageCount > 0;
       const bHas = b.messageCount > 0;
       // Groups with 0 total messages always go to bottom
@@ -186,7 +207,7 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
       // Fallback: by total messageCount
       return b.messageCount - a.messageCount;
     });
-  }, [groups, allGroupMessages]);
+  }, [groupList, allGroupMessages]);
 
   function handleDayClick(dateStr: string) {
     if (!selecting) {
@@ -282,7 +303,7 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
 
   const hasSelection = activeGroupIds.size > 0;
 
-  if (groups.length === 0) {
+  if (groupList.length === 0) {
     return <p className="text-fg-muted">No groups found.</p>;
   }
 
@@ -402,6 +423,13 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
                 >
                   <div className="font-medium truncate">{group.name}</div>
                   <div className="text-xs text-fg-muted">{group.messageCount} msgs</div>
+                </button>
+                <button
+                  onClick={(e) => toggleTracking(e, group)}
+                  title={group.tracked ? 'Tracking — click to stop' : 'Not tracking — click to start'}
+                  className="shrink-0 p-1 rounded hover:bg-surface-hover transition-colors"
+                >
+                  <div className={`w-2.5 h-2.5 rounded-full ${group.tracked ? 'bg-green-500' : 'bg-fg-muted/30'}`} />
                 </button>
               </div>
             );

@@ -1,17 +1,5 @@
 import { WASocket, proto } from '@whiskeysockets/baileys';
-import { saveMessage, saveGroup, Message } from '@parent-ai/shared';
-
-// Load tracked groups from env
-// Prefer TRACKED_GROUP_IDS (exact match by ID) over TRACKED_GROUPS (name substring match)
-const TRACKED_GROUP_IDS = (process.env.TRACKED_GROUP_IDS || '')
-  .split(',')
-  .map(id => id.trim())
-  .filter(Boolean);
-
-const TRACKED_GROUPS = (process.env.TRACKED_GROUPS || '')
-  .split(',')
-  .map(g => g.trim().toLowerCase())
-  .filter(Boolean);
+import { saveMessage, saveGroup, isGroupTracked, Message } from '@parent-ai/shared';
 
 interface GroupMetadata {
   id: string;
@@ -58,12 +46,7 @@ export function setupMessageListener(sock: WASocket): void {
     }
   });
 
-  const trackingInfo = TRACKED_GROUP_IDS.length > 0
-    ? `${TRACKED_GROUP_IDS.length} group(s) by ID`
-    : TRACKED_GROUPS.length > 0
-      ? TRACKED_GROUPS.join(', ')
-      : '(all groups)';
-  console.log(`👂 Listening for messages in: ${trackingInfo}`);
+  console.log(`👂 Listening for messages (tracking controlled via DB)`);
 }
 
 async function processMessage(
@@ -102,19 +85,9 @@ async function processMessage(
     }
   }
 
-  // Check if this group should be tracked
-  const hasIdFilter = TRACKED_GROUP_IDS.length > 0;
-  const hasNameFilter = TRACKED_GROUPS.length > 0;
-
-  if (hasIdFilter || hasNameFilter) {
-    const matchesId = hasIdFilter && TRACKED_GROUP_IDS.includes(remoteJid);
-    const matchesName = hasNameFilter && TRACKED_GROUPS.some(
-      pattern => groupMeta.subject.toLowerCase().includes(pattern)
-    );
-
-    if (!matchesId && !matchesName) {
-      return false;
-    }
+  // Check if this group is tracked in the DB
+  if (!isGroupTracked(remoteJid)) {
+    return false;
   }
 
   // Extract message content
