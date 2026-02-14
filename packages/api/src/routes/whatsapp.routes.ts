@@ -4,6 +4,7 @@ import {
   getMessages,
   getMessageCount,
   getConnectionGaps,
+  getDailyMessageCounts,
   resolveGroup,
 } from '@parent-ai/shared';
 
@@ -39,20 +40,41 @@ whatsapp.get('/resolve-group', (c) => {
   return c.json({ found: !!group, group });
 });
 
+whatsapp.get('/messages/daily-counts', (c) => {
+  const days = parseInt(c.req.query('days') || '30', 10);
+  const since = Date.now() - days * 24 * 60 * 60 * 1000;
+  const groupIdsParam = c.req.query('groupIds');
+  const groupIds = groupIdsParam ? groupIdsParam.split(',').filter(Boolean) : undefined;
+  const counts = getDailyMessageCounts(since, groupIds);
+  return c.json({ counts });
+});
+
 whatsapp.get('/messages', (c) => {
-  const hours = parseInt(c.req.query('hours') || '24', 10);
-  const now = Date.now();
-  const since = now - hours * 60 * 60 * 1000;
+  const fromParam = c.req.query('from');
+  const toParam = c.req.query('to');
+
+  let since: number;
+  let until: number;
+
+  if (fromParam && toParam) {
+    since = parseInt(fromParam, 10);
+    until = parseInt(toParam, 10);
+  } else {
+    const hours = parseInt(c.req.query('hours') || '24', 10);
+    until = Date.now();
+    since = until - hours * 60 * 60 * 1000;
+  }
 
   const groups = getGroups();
   const result = groups
     .map((g) => {
-      const messages = getMessages(g.id, since, now);
-      if (messages.length === 0) return null;
+      const messages = getMessages(g.id, since, until);
+      const lastMessageTime = messages.length > 0 ? messages[messages.length - 1].timestamp : 0;
       return {
         groupId: g.id,
         groupName: g.name,
         messageCount: messages.length,
+        lastMessageTime,
         messages: messages.map((m) => ({
           id: m.id,
           sender: m.sender_name || m.sender_id.split('@')[0],
@@ -62,9 +84,15 @@ whatsapp.get('/messages', (c) => {
         })),
       };
     })
-    .filter(Boolean);
+    .sort((a, b) => {
+      // Groups with messages on top, sorted by most recent message
+      if (a.messageCount === 0 && b.messageCount === 0) return 0;
+      if (a.messageCount === 0) return 1;
+      if (b.messageCount === 0) return -1;
+      return b.lastMessageTime - a.lastMessageTime;
+    });
 
-  return c.json({ hours, groups: result });
+  return c.json({ from: since, to: until, groups: result });
 });
 
 export { whatsapp };

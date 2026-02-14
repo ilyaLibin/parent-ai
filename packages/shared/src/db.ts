@@ -616,6 +616,22 @@ export function getTaskRun(id: number): TaskRun | undefined {
   return db.prepare('SELECT * FROM task_runs WHERE id = ?').get(id) as TaskRun | undefined;
 }
 
+export function getDailyMessageCounts(sinceTimestamp: number, groupIds?: string[]): { date: string; count: number }[] {
+  if (groupIds && groupIds.length > 0) {
+    const placeholders = groupIds.map(() => '?').join(',');
+    return db.prepare(`
+      SELECT DATE(timestamp / 1000, 'unixepoch', 'localtime') as date, COUNT(*) as count
+      FROM messages WHERE timestamp >= ? AND group_id IN (${placeholders})
+      GROUP BY date ORDER BY date
+    `).all(sinceTimestamp, ...groupIds) as { date: string; count: number }[];
+  }
+  return db.prepare(`
+    SELECT DATE(timestamp / 1000, 'unixepoch', 'localtime') as date, COUNT(*) as count
+    FROM messages WHERE timestamp >= ?
+    GROUP BY date ORDER BY date
+  `).all(sinceTimestamp) as { date: string; count: number }[];
+}
+
 export function getCronJobByName(name: string): CronJob | undefined {
   const row = db.prepare('SELECT * FROM cron_jobs WHERE name = ?').get(name) as CronJobRow | undefined;
   return row ? rowToCronJob(row) : undefined;
