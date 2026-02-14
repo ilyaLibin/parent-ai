@@ -231,12 +231,16 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
   }
 
   function clickGroup(groupId: string) {
-    if (previewGroupId === groupId) {
-      setPreviewGroupId(null);
-    } else {
-      setPreviewGroupId(groupId);
-    }
+    // Clicking a row (not checkbox) = exclusive select: deselect all others, check only this one
+    setCheckedGroupIds(new Set([groupId]));
+    setPreviewGroupId(null);
     loadMessages(fromDate, toDate);
+  }
+
+  function deselectAll() {
+    setCheckedGroupIds(new Set());
+    setPreviewGroupId(null);
+    setAllGroupMessages([]);
   }
 
   function isInRange(dateStr: string): boolean {
@@ -362,7 +366,16 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
       {/* Main content */}
       <div className="flex gap-6 flex-1 min-h-0">
         {/* Group list with checkboxes */}
-        <div className="w-64 shrink-0 space-y-1 overflow-y-auto">
+        <div className="w-64 shrink-0 flex flex-col overflow-y-auto">
+          {checkedGroupIds.size > 0 && (
+            <button
+              onClick={deselectAll}
+              className="text-xs text-accent hover:text-accent-hover mb-2 text-left px-2"
+            >
+              deselect all
+            </button>
+          )}
+          <div className="space-y-1">
           {sortedGroups.map((group) => {
             const isChecked = checkedGroupIds.has(group.id);
             const isPreviewing = previewGroupId === group.id;
@@ -393,6 +406,7 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
               </div>
             );
           })}
+          </div>
         </div>
 
         {/* Messages panel */}
