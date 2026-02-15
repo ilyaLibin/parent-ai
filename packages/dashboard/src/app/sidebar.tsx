@@ -10,6 +10,7 @@ const links = [
   { href: '/runs', label: 'runs' },
   { href: '/knowledge', label: 'knowledge' },
   { href: '/messages', label: 'messages' },
+  { href: '/action-items', label: 'action items' },
   { href: '/logs', label: 'logs' },
 ];
 

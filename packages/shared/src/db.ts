@@ -98,6 +98,18 @@ db.exec(`
     FOREIGN KEY (task_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_task_runs_task_id ON task_runs(task_id, started_at);
+
+  CREATE TABLE IF NOT EXISTS action_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    description TEXT NOT NULL,
+    date TEXT NOT NULL,
+    source_group_id TEXT,
+    source_group_name TEXT,
+    summary TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    dismissed INTEGER DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_action_items_date ON action_items(date);
 `);
 
 // Migrate: add new columns to cron_jobs if missing (for existing databases)
@@ -687,6 +699,57 @@ export function getDailyMessageCounts(sinceTimestamp: number, groupIds?: string[
 export function getCronJobByName(name: string): CronJob | undefined {
   const row = db.prepare('SELECT * FROM cron_jobs WHERE name = ?').get(name) as CronJobRow | undefined;
   return row ? rowToCronJob(row) : undefined;
+}
+
+// Action items
+export interface ActionItem {
+  id: number;
+  description: string;
+  date: string;
+  source_group_id: string | null;
+  source_group_name: string | null;
+  summary: string | null;
+  created_at: string;
+  dismissed: boolean;
+}
+
+interface ActionItemRow {
+  id: number;
+  description: string;
+  date: string;
+  source_group_id: string | null;
+  source_group_name: string | null;
+  summary: string | null;
+  created_at: string;
+  dismissed: number;
+}
+
+function rowToActionItem(row: ActionItemRow): ActionItem {
+  return { ...row, dismissed: row.dismissed === 1 };
+}
+
+export function getActionItems(from?: string, to?: string): ActionItem[] {
+  const conditions = ['dismissed = 0'];
+  const params: string[] = [];
+  if (from) { conditions.push('date >= ?'); params.push(from); }
+  if (to) { conditions.push('date <= ?'); params.push(to); }
+  const where = conditions.join(' AND ');
+  return (db.prepare(`SELECT * FROM action_items WHERE ${where} ORDER BY date ASC, id ASC`).all(...params) as ActionItemRow[]).map(rowToActionItem);
+}
+
+export function createActionItem(item: { description: string; date: string; source_group_id?: string | null; source_group_name?: string | null; summary?: string | null }): ActionItem {
+  const result = db.prepare(
+    'INSERT INTO action_items (description, date, source_group_id, source_group_name, summary) VALUES (?, ?, ?, ?, ?)'
+  ).run(item.description, item.date, item.source_group_id ?? null, item.source_group_name ?? null, item.summary ?? null);
+  return rowToActionItem(db.prepare('SELECT * FROM action_items WHERE id = ?').get(result.lastInsertRowid) as ActionItemRow);
+}
+
+export function dismissActionItem(id: number): boolean {
+  return db.prepare('UPDATE action_items SET dismissed = 1 WHERE id = ?').run(id).changes > 0;
+}
+
+export function deleteActionItem(id: number): boolean {
+  return db.prepare('DELETE FROM action_items WHERE id = ?').run(id).changes > 0;
 }
 
 export { db };

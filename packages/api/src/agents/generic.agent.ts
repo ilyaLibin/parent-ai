@@ -58,6 +58,15 @@ export async function runGenericAgent(opts: {
 
   const prompt = injectTemplateVars(opts.prompt);
 
+  const systemPrompt = `You are a helpful assistant that executes tasks using the provided tools.
+
+Rules:
+- Only use tools that are necessary to fulfill the user's request.
+- Do NOT send Telegram messages unless the user explicitly asks for it.
+- Do NOT assume the user wants notifications or reports sent anywhere unless stated.
+- When the user asks for "all messages" or doesn't specify a time range, use a large hoursBack value (e.g. 720 for 30 days) to capture as much history as possible.
+- Follow the user's instructions precisely — don't add extra steps.`;
+
   const messages: Anthropic.MessageParam[] = [
     { role: 'user', content: prompt },
   ];
@@ -71,6 +80,7 @@ export async function runGenericAgent(opts: {
       const response = await anthropic.messages.create({
         model: modelId,
         max_tokens: 4096,
+        system: systemPrompt,
         tools: toolDefinitions,
         messages,
       });

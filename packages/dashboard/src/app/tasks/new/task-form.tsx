@@ -24,7 +24,7 @@ const MODELS = ['haiku', 'sonnet', 'opus'] as const;
 
 export function TaskForm({ initial }: TaskFormProps) {
   const router = useRouter();
-  const isEdit = !!initial;
+  const isEdit = !!initial?.id;
 
   const [name, setName] = useState(initial?.name || '');
   const [schedule, setSchedule] = useState(initial?.schedule || '0 * * * *');

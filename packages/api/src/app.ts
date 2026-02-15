@@ -5,6 +5,7 @@ import { summary } from './routes/summary.routes.js';
 import { cron } from './routes/cron.routes.js';
 import { task } from './routes/task.routes.js';
 import { knowledge } from './routes/knowledge.routes.js';
+import { actionItems } from './routes/action-items.routes.js';
 
 const app = new Hono();
 
@@ -29,5 +30,6 @@ app.route('/', summary);
 app.route('/', cron);
 app.route('/', task);
 app.route('/', knowledge);
+app.route('/', actionItems);
 
 export { app };

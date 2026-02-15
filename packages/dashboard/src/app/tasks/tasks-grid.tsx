@@ -118,6 +118,16 @@ export function TasksGrid({ initialTasks, lastRunMap }: { initialTasks: Task[]; 
                       </button>
                     )}
                     <Link
+                      href={`/tasks/new?from=${task.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="btn-raised rounded p-1.5 text-fg-muted hover:text-fg"
+                      title="Duplicate"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </Link>
+                    <Link
                       href={`/tasks/${task.id}/runs`}
                       onClick={(e) => e.stopPropagation()}
                       className="btn-raised rounded p-1.5 text-fg-muted hover:text-fg"

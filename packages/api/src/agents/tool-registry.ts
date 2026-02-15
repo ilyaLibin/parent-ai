@@ -7,6 +7,8 @@ import {
   downloadMedia,
   getKnowledgeList,
   getKnowledgeByName,
+  createActionItem,
+  getActionItems,
   type Group,
 } from '@parent-ai/shared';
 import { sendTelegram } from '../services/telegram.service.js';
@@ -89,6 +91,56 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
       },
       required: ['name'],
+    },
+  },
+  {
+    name: 'getActionItems',
+    description:
+      'Get existing action items, optionally filtered by date range. Use this before creating new action items to avoid duplicates.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        from: {
+          type: 'string',
+          description: 'Start date filter in YYYY-MM-DD format.',
+        },
+        to: {
+          type: 'string',
+          description: 'End date filter in YYYY-MM-DD format.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'createActionItem',
+    description:
+      'Create an action item extracted from WhatsApp messages. Use this to save tasks, events, deadlines, or things parents need to do.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        description: {
+          type: 'string',
+          description: 'Clear description of the action item.',
+        },
+        date: {
+          type: 'string',
+          description: 'The date this action item is for, in YYYY-MM-DD format.',
+        },
+        sourceGroupId: {
+          type: 'string',
+          description: 'WhatsApp group ID the item was extracted from.',
+        },
+        sourceGroupName: {
+          type: 'string',
+          description: 'Human-readable name of the source group.',
+        },
+        summary: {
+          type: 'string',
+          description: 'Summary of the message or exchange the item was extracted from.',
+        },
+      },
+      required: ['description', 'date'],
     },
   },
 ];
@@ -191,6 +243,24 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
       return { success: false, error: `Knowledge entry "${name}" not found.` };
     }
     return { success: true, name: entry.name, content: entry.content };
+  },
+
+  async getActionItems(args) {
+    const from = args.from as string | undefined;
+    const to = args.to as string | undefined;
+    const items = getActionItems(from, to);
+    return { count: items.length, items: items.map((i) => ({ id: i.id, description: i.description, date: i.date, sourceGroupName: i.source_group_name })) };
+  },
+
+  async createActionItem(args) {
+    const item = createActionItem({
+      description: args.description as string,
+      date: args.date as string,
+      source_group_id: args.sourceGroupId as string | undefined,
+      source_group_name: args.sourceGroupName as string | undefined,
+      summary: args.summary as string | undefined,
+    });
+    return { success: true, id: item.id, description: item.description, date: item.date };
   },
 };
 
