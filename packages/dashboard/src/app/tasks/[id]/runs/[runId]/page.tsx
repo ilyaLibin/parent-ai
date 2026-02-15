@@ -46,6 +46,21 @@ function formatDuration(start: number, end: number | null): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
+const PRICE_PER_M: Record<string, { input: number; output: number }> = {
+  haiku: { input: 0.80, output: 4.00 },
+  sonnet: { input: 3.00, output: 15.00 },
+  opus: { input: 15.00, output: 75.00 },
+};
+
+function estimateCost(model: string | null, tokens: { input_tokens: number; output_tokens: number } | null): string | null {
+  if (!tokens || !model) return null;
+  const prices = PRICE_PER_M[model];
+  if (!prices) return null;
+  const cost = (tokens.input_tokens * prices.input + tokens.output_tokens * prices.output) / 1_000_000;
+  if (cost < 0.005) return '<$0.01';
+  return `$${cost.toFixed(2)}`;
+}
+
 export default async function RunDetailPage({ params }: { params: Promise<{ id: string; runId: string }> }) {
   const { id, runId } = await params;
   const [task, run] = await Promise.all([getTask(id), getRun(runId)]);
@@ -92,6 +107,12 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
           <div>
             <span className="text-fg-muted text-xs uppercase tracking-wider">tokens </span>
             <span>{tokens.input_tokens} in / {tokens.output_tokens} out</span>
+          </div>
+        )}
+        {estimateCost(run.model, tokens) && (
+          <div>
+            <span className="text-fg-muted text-xs uppercase tracking-wider">cost </span>
+            <span>{estimateCost(run.model, tokens)}</span>
           </div>
         )}
       </div>

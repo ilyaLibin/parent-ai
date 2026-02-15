@@ -2,6 +2,21 @@
 
 import { useRouter } from 'next/navigation';
 
+const PRICE_PER_M: Record<string, { input: number; output: number }> = {
+  haiku: { input: 0.80, output: 4.00 },
+  sonnet: { input: 3.00, output: 15.00 },
+  opus: { input: 15.00, output: 75.00 },
+};
+
+function estimateCost(model: string | null, tokens: { input_tokens: number; output_tokens: number } | null): string | null {
+  if (!tokens || !model) return null;
+  const prices = PRICE_PER_M[model];
+  if (!prices) return null;
+  const cost = (tokens.input_tokens * prices.input + tokens.output_tokens * prices.output) / 1_000_000;
+  if (cost < 0.005) return '<$0.01';
+  return `$${cost.toFixed(2)}`;
+}
+
 interface TaskRun {
   id: number;
   task_id: number;
@@ -9,6 +24,7 @@ interface TaskRun {
   completed_at: number | null;
   success: number | null;
   error: string | null;
+  model: string | null;
   token_usage_json: string | null;
 }
 
@@ -41,6 +57,7 @@ export function RunsTable({ runs, taskMap, showTask = true }: { runs: TaskRun[];
             <th className="py-3 px-4">Duration</th>
             <th className="py-3 px-4">Status</th>
             <th className="py-3 px-4">Tokens</th>
+            <th className="py-3 px-4">Cost</th>
           </tr>
         </thead>
         <tbody>
@@ -71,6 +88,9 @@ export function RunsTable({ runs, taskMap, showTask = true }: { runs: TaskRun[];
                 </td>
                 <td className="py-3 px-4 text-fg-muted text-xs">
                   {tokens ? `${tokens.input_tokens + tokens.output_tokens}` : '-'}
+                </td>
+                <td className="py-3 px-4 text-fg-muted text-xs">
+                  {estimateCost(run.model, tokens) || '-'}
                 </td>
               </tr>
             );
