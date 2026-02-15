@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ImproveModal } from '../../components/improve-modal';
 
 interface KnowledgeFormProps {
   initial?: {
@@ -19,6 +20,7 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
   const [content, setContent] = useState(initial?.content || '');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
 
   async function handleSave() {
     if (!name.trim() || !content.trim()) return;
@@ -75,7 +77,18 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
         </div>
 
         <div className="flex-1 flex flex-col min-h-0">
-          <label className="block text-xs text-fg-muted mb-1 uppercase tracking-wider">Content</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-xs text-fg-muted uppercase tracking-wider">Content</label>
+            <button
+              onClick={() => setShowGenerateModal(true)}
+              className="flex items-center gap-1 text-xs text-accent hover:text-accent/80 transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+              </svg>
+              Generate
+            </button>
+          </div>
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -109,6 +122,16 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
           </div>
         )}
       </div>
+
+      {showGenerateModal && (
+        <ImproveModal
+          open={showGenerateModal}
+          onClose={() => setShowGenerateModal(false)}
+          onApply={(text) => setContent(text)}
+          type="generate-knowledge"
+          currentContent={content || undefined}
+        />
+      )}
     </div>
   );
 }
