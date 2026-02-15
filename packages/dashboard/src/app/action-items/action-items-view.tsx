@@ -15,6 +15,26 @@ function getMonthDays(year: number, month: number) {
   return { firstDay, daysInMonth };
 }
 
+function buildGoogleCalendarUrl(item: ActionItem): string {
+  const date = item.date.replace(/-/g, '');
+  // All-day event: dates param with start/end (next day)
+  const startDate = date;
+  const d = new Date(item.date + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  const endDate = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: item.description,
+    dates: `${startDate}/${endDate}`,
+  });
+
+  if (item.summary) params.set('details', item.summary);
+  if (item.source_group_name) params.set('details', `${item.summary || ''}\n\nSource: ${item.source_group_name}`.trim());
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }) {
   const [items, setItems] = useState<ActionItem[]>(initialItems);
   const today = new Date();
@@ -247,6 +267,17 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
               )}
 
               <div className="mt-5 flex items-center gap-3">
+                <a
+                  href={buildGoogleCalendarUrl(item)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-accent rounded-md px-4 py-2 text-sm font-medium flex items-center gap-1.5"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  add to calendar
+                </a>
                 <button
                   onClick={(e) => handleDismiss(e, item.id)}
                   disabled={dismissing === item.id}
