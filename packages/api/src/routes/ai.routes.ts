@@ -1,67 +1,78 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   getCronJobs,
   getKnowledgeByName,
-  getKnowledgeById,
-  getGroupsByIds,
+  getKnowledgeList,
   getGroups,
 } from '@parent-ai/shared';
 
 const anthropic = new Anthropic();
 const ai = new Hono();
 
-const MENTION_RE = /\[@([^\]]+)\]\((group|knowledge):([^)]+)\)/g;
+type StepEntry =
+  | { type: 'text'; content: string }
+  | { type: 'tool_call'; name: string; args: Record<string, unknown>; result: unknown };
 
-function parseMentions(text: string): { type: string; name: string; id: string }[] {
-  const mentions: { type: string; name: string; id: string }[] = [];
-  let match;
-  while ((match = MENTION_RE.exec(text)) !== null) {
-    mentions.push({ name: match[1], type: match[2], id: match[3] });
-  }
-  return mentions;
-}
+// Tools the assist agent can use to gather context
+const assistToolDefinitions: Anthropic.Tool[] = [
+  {
+    name: 'listTasks',
+    description: 'List all existing task definitions with their names, schedules, models, and prompts.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
+    name: 'listKnowledge',
+    description: 'List all available knowledge entries by name.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
+    name: 'getKnowledge',
+    description: 'Get the full content of a knowledge entry by name.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'The name of the knowledge entry to retrieve.' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'listGroups',
+    description: 'List all WhatsApp groups with their names and IDs.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+];
 
-function gatherContext(instructions: string, currentContent?: string) {
-  const mentions = parseMentions(instructions + '\n' + (currentContent || ''));
-
-  // Gather all task prompts for context
-  const tasks = getCronJobs(false);
-  const taskContext = tasks
-    .filter((t) => t.prompt)
-    .map((t) => `## Task: ${t.name}\nSchedule: ${t.schedule}\nModel: ${t.model || 'sonnet'}\n\n${t.prompt}`)
-    .join('\n\n---\n\n');
-
-  // Gather mentioned knowledge
-  const knowledgeParts: string[] = [];
-  for (const m of mentions.filter((m) => m.type === 'knowledge')) {
-    const k = getKnowledgeById(Number(m.id)) || getKnowledgeByName(m.name);
-    if (k) knowledgeParts.push(`## Knowledge: ${k.name}\n\n${k.content}`);
-  }
-
-  // Gather mentioned groups
-  const groupIds = mentions.filter((m) => m.type === 'group').map((m) => m.id);
-  const groupParts: string[] = [];
-  if (groupIds.length > 0) {
-    const groups = getGroupsByIds(groupIds);
-    for (const g of groups) {
-      groupParts.push(`- Group "${g.name}" (ID: ${g.id})`);
-    }
-  }
-
-  let context = '';
-  if (taskContext) {
-    context += `# Existing Tasks\n\n${taskContext}\n\n`;
-  }
-  if (knowledgeParts.length > 0) {
-    context += `# Referenced Knowledge\n\n${knowledgeParts.join('\n\n---\n\n')}\n\n`;
-  }
-  if (groupParts.length > 0) {
-    context += `# Referenced Groups\n\n${groupParts.join('\n')}\n\n`;
-  }
-
-  return context;
-}
+const assistToolImplementations: Record<string, (args: Record<string, unknown>) => unknown> = {
+  listTasks() {
+    const tasks = getCronJobs(false);
+    return {
+      tasks: tasks.map((t) => ({
+        name: t.name,
+        schedule: t.schedule,
+        model: t.model || 'sonnet',
+        enabled: t.enabled,
+        prompt: t.prompt || null,
+      })),
+    };
+  },
+  listKnowledge() {
+    const entries = getKnowledgeList();
+    return { entries: entries.map((e) => ({ name: e.name })) };
+  },
+  getKnowledge(args) {
+    const name = args.name as string;
+    const entry = getKnowledgeByName(name);
+    if (!entry) return { error: `Knowledge entry "${name}" not found.` };
+    return { name: entry.name, content: entry.content };
+  },
+  listGroups() {
+    const groups = getGroups();
+    return { groups: groups.map((g) => ({ id: g.id, name: g.name })) };
+  },
+};
 
 ai.post('/ai/assist', async (c) => {
   const body = await c.req.json<{
@@ -74,50 +85,93 @@ ai.post('/ai/assist', async (c) => {
     return c.json({ error: 'type and instructions are required' }, 400);
   }
 
-  const context = gatherContext(body.instructions, body.currentContent);
+  const isImprove = body.type === 'improve-prompt';
 
-  let systemPrompt: string;
-  let userPrompt: string;
+  const systemPrompt = isImprove
+    ? `You are an expert at writing AI agent task prompts for a WhatsApp monitoring system.
 
-  if (body.type === 'improve-prompt') {
-    systemPrompt = `You are an expert at writing AI agent task prompts. You help improve prompts for scheduled AI agents that monitor WhatsApp groups and generate reports.
+You have tools to explore existing tasks, knowledge entries, and groups. Use them to understand the current setup before writing the improved prompt.
 
-Your output must be ONLY the improved prompt text — no explanations, no markdown code blocks, no preamble. Just the raw prompt that will be used directly.
+Rules:
+- Use tools first to gather relevant context — check existing tasks, knowledge, and groups as needed.
+- After gathering context, output ONLY the improved/new prompt text.
+- No explanations, no markdown code blocks, no preamble — just the raw prompt.
+- The prompts can use these template variables: {{today}}, {{tomorrow}}, {{date}}, {{datetime}}
+- The prompts can reference groups and knowledge with @mention syntax: [@Name](type:id)`
+    : `You are an expert at creating knowledge base documents for a WhatsApp monitoring system.
 
-The prompts can use these template variables: {{today}}, {{tomorrow}}, {{date}}, {{datetime}}
-The prompts can reference groups and knowledge with @mention syntax: [@Name](type:id)
+You have tools to explore existing tasks, knowledge entries, and groups. Use them to understand the current setup before generating content.
 
-${context}`;
+Rules:
+- Use tools first to gather relevant context — check existing tasks, knowledge, and groups as needed.
+- After gathering context, output ONLY the knowledge content.
+- No explanations, no markdown code blocks wrapping the content, no preamble.
+- The content should be in markdown format.`;
 
-    userPrompt = body.currentContent
-      ? `Here is the current prompt to improve:\n\n${body.currentContent}\n\nInstructions for improvement:\n${body.instructions}`
-      : `Create a new prompt based on these instructions:\n${body.instructions}`;
-  } else {
-    systemPrompt = `You are an expert at creating knowledge base documents. These documents are used by AI agents as reference material when generating reports about WhatsApp group activities.
+  const userPrompt = body.currentContent
+    ? `Here is the current ${isImprove ? 'prompt' : 'content'}:\n\n${body.currentContent}\n\nInstructions:\n${body.instructions}`
+    : `${isImprove ? 'Create a new prompt' : 'Generate knowledge content'} based on these instructions:\n${body.instructions}`;
 
-Your output must be ONLY the knowledge content — no explanations, no markdown code blocks wrapping the content, no preamble. Just the raw content that will be stored directly. The content should be in markdown format.
+  return streamSSE(c, async (stream) => {
+    const steps: StepEntry[] = [];
+    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userPrompt }];
 
-${context}`;
+    try {
+      for (let i = 0; i < 10; i++) {
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 4096,
+          system: systemPrompt,
+          tools: assistToolDefinitions,
+          messages,
+        });
 
-    userPrompt = body.currentContent
-      ? `Here is the current knowledge content to improve:\n\n${body.currentContent}\n\nInstructions:\n${body.instructions}`
-      : `Generate knowledge content based on these instructions:\n${body.instructions}`;
-  }
+        // Collect text blocks
+        for (const block of response.content) {
+          if (block.type === 'text' && block.text.trim()) {
+            steps.push({ type: 'text', content: block.text });
+            await stream.writeSSE({ data: JSON.stringify({ type: 'steps', steps }), event: 'steps' });
+          }
+        }
 
-  try {
-    const res = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
-    });
+        if (response.stop_reason !== 'tool_use') {
+          break;
+        }
 
-    const result = (res.content[0] as { type: 'text'; text: string }).text;
-    return c.json({ result });
-  } catch (err: any) {
-    console.error('[ai] assist error:', err.message);
-    return c.json({ error: 'AI assist failed' }, 500);
-  }
+        // Execute tool calls
+        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+        for (const block of response.content) {
+          if (block.type === 'tool_use') {
+            const args = block.input as Record<string, unknown>;
+            const impl = assistToolImplementations[block.name];
+            const result = impl ? impl(args) : { error: `Unknown tool: ${block.name}` };
+
+            steps.push({ type: 'tool_call', name: block.name, args, result });
+            await stream.writeSSE({ data: JSON.stringify({ type: 'steps', steps }), event: 'steps' });
+
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: JSON.stringify(result),
+            });
+          }
+        }
+
+        messages.push({ role: 'assistant', content: response.content as Anthropic.ContentBlockParam[] });
+        messages.push({ role: 'user', content: toolResults });
+      }
+
+      // Extract the final text result (last text step)
+      const textSteps = steps.filter((s) => s.type === 'text') as { type: 'text'; content: string }[];
+      const result = textSteps.length > 0 ? textSteps[textSteps.length - 1].content : '';
+
+      await stream.writeSSE({ data: JSON.stringify({ type: 'done', result, steps }), event: 'done' });
+    } catch (err: any) {
+      console.error('[ai] assist error:', err.message);
+      await stream.writeSSE({ data: JSON.stringify({ type: 'error', error: err.message || 'AI assist failed' }), event: 'error' });
+    }
+  });
 });
 
 export { ai };
