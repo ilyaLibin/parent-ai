@@ -12,6 +12,7 @@ interface TaskRun {
   completed_at: number | null;
   success: number | null;
   error: string | null;
+  model: string | null;
   token_usage_json: string | null;
 }
 

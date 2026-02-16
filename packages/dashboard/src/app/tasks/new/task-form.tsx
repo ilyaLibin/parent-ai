@@ -9,7 +9,7 @@ import { ImproveModal } from '../../components/improve-modal';
 
 interface TaskFormProps {
   initial?: {
-    id: number;
+    id?: number;
     name: string;
     schedule: string;
     prompt: string | null;
@@ -212,7 +212,7 @@ export function TaskForm({ initial }: TaskFormProps) {
 
       {isEdit && showRunModal && (
         <RunModal
-          taskId={initial.id}
+          taskId={initial.id!}
           taskName={name}
           open={showRunModal}
           onClose={() => setShowRunModal(false)}
