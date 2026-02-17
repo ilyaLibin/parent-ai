@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ImproveModal } from '../../components/improve-modal';
+import { FullscreenTextarea } from '../../components/fullscreen-editor';
+import { useIsMobile } from '../../hooks/use-is-mobile';
 
 interface KnowledgeFormProps {
   initial?: {
@@ -21,6 +23,8 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const isMobile = useIsMobile();
 
   async function handleSave() {
     if (!name.trim() || !content.trim()) return;
@@ -92,6 +96,7 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
+            onFocus={() => isMobile && setFullscreen(true)}
             className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none"
             placeholder="Knowledge content (markdown supported)..."
             dir="auto"
@@ -131,6 +136,16 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
           onApply={(text) => setContent(text)}
           type="generate-knowledge"
           currentContent={content || undefined}
+        />
+      )}
+
+      {fullscreen && (
+        <FullscreenTextarea
+          label="Content"
+          value={content}
+          onChange={setContent}
+          onClose={() => setFullscreen(false)}
+          placeholder="Knowledge content (markdown supported)..."
         />
       )}
     </div>

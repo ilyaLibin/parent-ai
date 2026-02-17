@@ -7,6 +7,8 @@ interface MentionInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  onFocus?: () => void;
+  autoFocus?: boolean;
 }
 
 interface MentionItem {
@@ -117,7 +119,7 @@ function getCaretCoordinates(textarea: HTMLTextAreaElement, position: number): {
   };
 }
 
-export function MentionInput({ value, onChange, placeholder, className }: MentionInputProps) {
+export function MentionInput({ value, onChange, placeholder, className, onFocus, autoFocus }: MentionInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const [showPopup, setShowPopup] = useState(false);
@@ -264,9 +266,11 @@ export function MentionInput({ value, onChange, placeholder, className }: Mentio
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onFocus={onFocus}
         placeholder={placeholder}
         className={className}
         dir="auto"
+        autoFocus={autoFocus}
       />
 
       {showPopup && filtered.length > 0 && (

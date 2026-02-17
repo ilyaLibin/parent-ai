@@ -110,7 +110,7 @@ export function TasksGrid({ initialTasks, lastRunMap }: { initialTasks: Task[]; 
                       <button
                         onClick={(e) => { e.stopPropagation(); setModalTask(task); }}
                         className="btn-raised rounded p-1.5 text-fg-muted hover:text-fg"
-                        title="Run now"
+                        title="Test run"
                       >
                         <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                           <path d="M8 5v14l11-7z" />

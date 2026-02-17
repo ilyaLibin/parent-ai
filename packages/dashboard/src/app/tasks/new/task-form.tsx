@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ScheduleInput } from '../../components/schedule-input';
 import { MentionInput } from '../../components/mention-input';
+import { FullscreenEditor } from '../../components/fullscreen-editor';
 import { RunModal } from '../../components/run-modal';
 import { ImproveModal } from '../../components/improve-modal';
+import { useIsMobile } from '../../hooks/use-is-mobile';
 
 interface TaskFormProps {
   initial?: {
@@ -36,6 +38,8 @@ export function TaskForm({ initial }: TaskFormProps) {
   const [deleting, setDeleting] = useState(false);
   const [showRunModal, setShowRunModal] = useState(false);
   const [showImproveModal, setShowImproveModal] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const isMobile = useIsMobile();
 
   async function handleSave() {
     if (!name.trim() || !schedule.trim()) return;
@@ -123,6 +127,7 @@ export function TaskForm({ initial }: TaskFormProps) {
           <MentionInput
             value={prompt}
             onChange={setPrompt}
+            onFocus={() => isMobile && setFullscreen(true)}
             className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none"
             placeholder="Define what the agent should do — type @ to reference groups or knowledge..."
           />
@@ -184,7 +189,7 @@ export function TaskForm({ initial }: TaskFormProps) {
                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
-                Run
+                Test run
               </button>
             )}
             <button
@@ -226,6 +231,14 @@ export function TaskForm({ initial }: TaskFormProps) {
           onApply={(text) => setPrompt(text)}
           type="improve-prompt"
           currentContent={prompt}
+        />
+      )}
+
+      {fullscreen && (
+        <FullscreenEditor
+          value={prompt}
+          onChange={setPrompt}
+          onClose={() => setFullscreen(false)}
         />
       )}
     </div>
