@@ -284,58 +284,61 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
   return (
     <div className="flex flex-col h-[calc(100vh-10rem)]">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Row 1: navigation */}
+        <div className="flex items-center justify-between sm:justify-start gap-2">
           <button onClick={prevPeriod} className="btn-raised rounded-md px-2.5 py-1.5 text-sm">
             &larr;
           </button>
-          <h3 className="text-lg font-bold text-fg min-w-[180px] text-center">
+          <h3 className="text-base sm:text-lg font-bold text-fg text-center sm:min-w-[180px]">
             {viewMode === 'month' ? monthLabel : rangeLabel}
           </h3>
           <button onClick={nextPeriod} className="btn-raised rounded-md px-2.5 py-1.5 text-sm">
             &rarr;
           </button>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-fg-muted hidden sm:inline">
-            {items.length} active item{items.length !== 1 ? 's' : ''}
+        {/* Row 2 on mobile: controls */}
+        <div className="flex items-center justify-between sm:justify-end gap-3">
+          <span className="text-xs text-fg-muted">
+            {items.length} item{items.length !== 1 ? 's' : ''}
           </span>
-          {/* View mode toggle */}
-          <div className="flex rounded-md overflow-hidden border border-border">
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-md overflow-hidden border border-border">
+              <button
+                onClick={() => {
+                  setViewMode('week');
+                  if (isMobile) {
+                    setRangeStart(today);
+                  } else {
+                    setRangeStart(getWeekStart(today));
+                  }
+                }}
+                className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+                  viewMode === 'week'
+                    ? 'bg-accent text-white'
+                    : 'bg-raised text-fg-secondary hover:text-fg'
+                }`}
+              >
+                {isMobile ? '3 days' : 'week'}
+              </button>
+              <button
+                onClick={() => setViewMode('month')}
+                className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+                  viewMode === 'month'
+                    ? 'bg-accent text-white'
+                    : 'bg-raised text-fg-secondary hover:text-fg'
+                }`}
+              >
+                month
+              </button>
+            </div>
             <button
-              onClick={() => {
-                setViewMode('week');
-                if (isMobile) {
-                  setRangeStart(today);
-                } else {
-                  setRangeStart(getWeekStart(today));
-                }
-              }}
-              className={`px-2.5 py-1 text-xs font-medium transition-colors ${
-                viewMode === 'week'
-                  ? 'bg-accent text-white'
-                  : 'bg-raised text-fg-secondary hover:text-fg'
-              }`}
+              onClick={goToToday}
+              className="btn-raised rounded-md px-3 py-1.5 text-xs font-medium"
             >
-              {isMobile ? '3 days' : 'week'}
-            </button>
-            <button
-              onClick={() => setViewMode('month')}
-              className={`px-2.5 py-1 text-xs font-medium transition-colors ${
-                viewMode === 'month'
-                  ? 'bg-accent text-white'
-                  : 'bg-raised text-fg-secondary hover:text-fg'
-              }`}
-            >
-              month
+              today
             </button>
           </div>
-          <button
-            onClick={goToToday}
-            className="btn-raised rounded-md px-3 py-1.5 text-xs font-medium"
-          >
-            today
-          </button>
         </div>
       </div>
 
