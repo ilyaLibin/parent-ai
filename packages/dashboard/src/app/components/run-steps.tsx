@@ -37,7 +37,7 @@ function TextStep({ content }: { content: string }) {
   return (
     <div className="card-raised rounded-lg p-4">
       <div className="text-xs text-fg-muted mb-2 uppercase tracking-wider">assistant</div>
-      <div className="text-sm whitespace-pre-wrap">{content}</div>
+      <div className="text-sm whitespace-pre-wrap" dir="auto">{content}</div>
     </div>
   );
 }

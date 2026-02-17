@@ -266,6 +266,7 @@ export function MentionInput({ value, onChange, placeholder, className }: Mentio
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className={className}
+        dir="auto"
       />
 
       {showPopup && filtered.length > 0 && (

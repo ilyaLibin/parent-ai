@@ -483,7 +483,7 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
                             {new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
-                        <p className="text-sm text-fg-secondary whitespace-pre-wrap">
+                        <p className="text-sm text-fg-secondary whitespace-pre-wrap" dir="auto">
                           {msg.content || (
                             <span className="italic text-fg-muted">[{msg.type}]</span>
                           )}

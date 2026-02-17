@@ -213,6 +213,7 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                       setExpandedItem(expandedItem === item.id ? null : item.id)
                     }
                     className="w-full text-left rounded px-1.5 py-1 text-sm leading-snug truncate bg-accent-subtle text-accent font-medium hover:bg-accent hover:text-white transition-colors"
+                    dir="auto"
                     title={item.description}
                   >
                     {item.description}
@@ -245,7 +246,7 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                 &times;
               </button>
 
-              <p className="text-base font-bold text-fg pr-6">{item.description}</p>
+              <p className="text-base font-bold text-fg pr-6" dir="auto">{item.description}</p>
 
               <div className="flex items-center gap-3 mt-2">
                 <span className="text-sm text-fg-muted">
@@ -261,7 +262,7 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
               </div>
 
               {item.summary && (
-                <p className="text-sm text-fg-secondary mt-3 leading-relaxed">
+                <p className="text-sm text-fg-secondary mt-3 leading-relaxed" dir="auto">
                   {item.summary}
                 </p>
               )}

@@ -94,6 +94,7 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
             onChange={(e) => setContent(e.target.value)}
             className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none"
             placeholder="Knowledge content (markdown supported)..."
+            dir="auto"
           />
         </div>
       </div>
