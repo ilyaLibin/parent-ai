@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import type { ActionItem } from './page';
 
 function formatLocalDate(d: Date): string {
@@ -44,6 +44,41 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
   const [dismissing, setDismissing] = useState<number | null>(null);
 
   const todayStr = formatLocalDate(today);
+
+  // Flat sorted list for prev/next navigation
+  const sortedItems = useMemo(
+    () => [...items].sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id),
+    [items],
+  );
+
+  const currentIndex = useMemo(
+    () => (expandedItem !== null ? sortedItems.findIndex((i) => i.id === expandedItem) : -1),
+    [expandedItem, sortedItems],
+  );
+
+  const goNext = useCallback(() => {
+    if (currentIndex < sortedItems.length - 1) {
+      setExpandedItem(sortedItems[currentIndex + 1].id);
+    }
+  }, [currentIndex, sortedItems]);
+
+  const goPrev = useCallback(() => {
+    if (currentIndex > 0) {
+      setExpandedItem(sortedItems[currentIndex - 1].id);
+    }
+  }, [currentIndex, sortedItems]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (expandedItem === null) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'ArrowRight') goNext();
+      else if (e.key === 'ArrowLeft') goPrev();
+      else if (e.key === 'Escape') setExpandedItem(null);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expandedItem, goNext, goPrev]);
 
   // Group items by date
   const itemsByDate = useMemo(() => {
@@ -95,8 +130,19 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
     try {
       const res = await fetch(`/api/action-items/${id}/dismiss`, { method: 'PATCH' });
       if (res.ok) {
+        // Navigate to next (or prev, or close) before removing
+        if (expandedItem === id) {
+          const idx = sortedItems.findIndex((i) => i.id === id);
+          const remaining = sortedItems.filter((i) => i.id !== id);
+          if (remaining.length === 0) {
+            setExpandedItem(null);
+          } else if (idx < remaining.length) {
+            setExpandedItem(remaining[idx].id);
+          } else {
+            setExpandedItem(remaining[remaining.length - 1].id);
+          }
+        }
         setItems((prev) => prev.filter((item) => item.id !== id));
-        if (expandedItem === id) setExpandedItem(null);
       }
     } finally {
       setDismissing(null);
@@ -212,7 +258,11 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                     onClick={() =>
                       setExpandedItem(expandedItem === item.id ? null : item.id)
                     }
-                    className="w-full text-left rounded px-1.5 py-1 text-sm leading-snug truncate bg-accent-subtle text-accent font-medium hover:bg-accent hover:text-white transition-colors"
+                    className={`w-full text-left rounded px-1.5 py-1 text-sm leading-snug truncate font-medium transition-colors ${
+                      expandedItem === item.id
+                        ? 'bg-accent text-white ring-2 ring-accent ring-offset-1'
+                        : 'bg-accent-subtle text-accent hover:bg-accent hover:text-white'
+                    }`}
                     dir="auto"
                     title={item.description}
                   >
@@ -245,6 +295,27 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
               >
                 &times;
               </button>
+
+              {/* Navigation arrows */}
+              <div className="flex items-center gap-2 mb-3">
+                <button
+                  onClick={goPrev}
+                  disabled={currentIndex <= 0}
+                  className="btn-raised rounded-md w-7 h-7 flex items-center justify-center text-sm disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  &larr;
+                </button>
+                <span className="text-xs text-fg-muted">
+                  {currentIndex + 1} / {sortedItems.length}
+                </span>
+                <button
+                  onClick={goNext}
+                  disabled={currentIndex >= sortedItems.length - 1}
+                  className="btn-raised rounded-md w-7 h-7 flex items-center justify-center text-sm disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  &rarr;
+                </button>
+              </div>
 
               <p className="text-base font-bold text-fg pr-6" dir="auto">{item.description}</p>
 
@@ -292,12 +363,6 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                       dismiss
                     </>
                   )}
-                </button>
-                <button
-                  onClick={() => setExpandedItem(null)}
-                  className="btn-raised rounded-md px-4 py-2 text-sm text-fg-secondary"
-                >
-                  close
                 </button>
               </div>
             </div>
