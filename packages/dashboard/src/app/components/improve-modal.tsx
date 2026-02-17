@@ -157,7 +157,7 @@ export function ImproveModal({ open, onClose, onApply, type, currentContent }: I
               <MentionInput
                 value={instructions}
                 onChange={setInstructions}
-                className="w-full input-inset rounded-lg px-3 py-2 text-sm resize-none min-h-[80px]"
+                className="w-full input-inset rounded-lg px-3 py-2 text-sm resize-none min-h-[80px] font-content"
                 placeholder={
                   isImprove
                     ? 'e.g. Make it more concise, add @knowledge reference...'

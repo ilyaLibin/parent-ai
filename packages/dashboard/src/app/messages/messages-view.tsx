@@ -421,7 +421,7 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
                   onClick={() => clickGroup(group.id)}
                   className="flex-1 text-left min-w-0"
                 >
-                  <div className="font-medium truncate">{group.name}</div>
+                  <div className="font-medium truncate font-content">{group.name}</div>
                   <div className="text-xs text-fg-muted">{group.messageCount} msgs</div>
                 </button>
                 <button
@@ -474,16 +474,16 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
                       <div key={msg.id} className="card-raised rounded-lg px-4 py-3">
                         <div className="flex justify-between items-baseline mb-1">
                           <div className="flex items-baseline gap-2 min-w-0">
-                            <span className="text-sm font-bold text-accent truncate">{msg.sender}</span>
+                            <span className="text-sm font-bold text-accent truncate font-content">{msg.sender}</span>
                             {msg.groupName && (
-                              <span className="text-xs text-fg-muted truncate">in {msg.groupName}</span>
+                              <span className="text-xs text-fg-muted truncate font-content">in {msg.groupName}</span>
                             )}
                           </div>
                           <span className="text-xs text-fg-muted shrink-0 ml-2">
                             {new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
-                        <p className="text-sm text-fg-secondary whitespace-pre-wrap" dir="auto">
+                        <p className="text-sm text-fg-secondary whitespace-pre-wrap font-content" dir="auto">
                           {msg.content || (
                             <span className="italic text-fg-muted">[{msg.type}]</span>
                           )}

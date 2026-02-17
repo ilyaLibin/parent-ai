@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@utility font-content {
+  font-family: var(--font-content), system-ui, sans-serif;
+}
+
 @theme {
   --color-surface: var(--surface);
   --color-surface-secondary: var(--surface-secondary);

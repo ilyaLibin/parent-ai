@@ -38,7 +38,7 @@ export function FullscreenEditor({ value, onChange, onClose }: FullscreenEditorP
           value={value}
           onChange={onChange}
           autoFocus
-          className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none"
+          className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none font-content"
           placeholder="Define what the agent should do — type @ to reference groups or knowledge..."
         />
       </div>
@@ -81,7 +81,7 @@ export function FullscreenTextarea({ label, value, onChange, onClose, placeholde
           value={value}
           onChange={(e) => onChange(e.target.value)}
           autoFocus
-          className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none"
+          className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none font-content"
           placeholder={placeholder}
           dir="auto"
         />

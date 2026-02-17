@@ -128,7 +128,7 @@ export function TaskForm({ initial }: TaskFormProps) {
             value={prompt}
             onChange={setPrompt}
             onFocus={() => isMobile && setFullscreen(true)}
-            className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none"
+            className="flex-1 w-full input-inset rounded-lg px-3 py-2 text-sm resize-none font-content"
             placeholder="Define what the agent should do — type @ to reference groups or knowledge..."
           />
           <p className="text-xs text-fg-muted mt-1">

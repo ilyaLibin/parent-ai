@@ -258,7 +258,7 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
               dir="auto"
               title={item.description}
             >
-              {item.description}
+              <span className="font-content">{item.description}</span>
             </button>
           ))}
         </div>
@@ -427,7 +427,7 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                 </button>
               </div>
 
-              <p className="text-base font-bold text-fg pr-6" dir="auto">{item.description}</p>
+              <p className="text-base font-bold text-fg pr-6 font-content" dir="auto">{item.description}</p>
 
               <div className="flex items-center gap-3 mt-2">
                 <span className="text-sm text-fg-muted">
@@ -438,12 +438,12 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                   })}
                 </span>
                 {item.source_group_name && (
-                  <span className="text-sm text-accent">{item.source_group_name}</span>
+                  <span className="text-sm text-accent font-content">{item.source_group_name}</span>
                 )}
               </div>
 
               {item.summary && (
-                <p className="text-sm text-fg-secondary mt-3 leading-relaxed" dir="auto">
+                <p className="text-sm text-fg-secondary mt-3 leading-relaxed font-content" dir="auto">
                   {item.summary}
                 </p>
               )}
