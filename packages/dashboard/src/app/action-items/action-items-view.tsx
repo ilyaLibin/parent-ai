@@ -45,7 +45,7 @@ function buildGoogleCalendarUrl(item: ActionItem): string {
   if (item.summary) params.set('details', item.summary);
   if (item.source_group_name) params.set('details', `${item.summary || ''}\n\nSource: ${item.source_group_name}`.trim());
 
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  return `https://calendar.google.com/calendar/render?authuser=ilyayaellibin@gmail.com&${params.toString()}`;
 }
 
 type ViewMode = 'month' | 'week';
