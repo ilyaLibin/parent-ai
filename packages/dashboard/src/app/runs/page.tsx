@@ -1,4 +1,5 @@
 import { RunsTable } from './runs-table';
+import { PageHeader } from '../components/page-header';
 
 const API_URL = process.env.API_URL || 'http://localhost:3033';
 
@@ -38,7 +39,7 @@ export default async function RunsPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Task Runs</h2>
+      <PageHeader title="Task Runs" />
 
       {runs.length === 0 ? (
         <p className="text-fg-muted">No runs yet.</p>

@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { RunDetail } from './run-detail';
+import { PageHeader } from '../../../../components/page-header';
 
 const API_URL = process.env.API_URL || 'http://localhost:3033';
 
@@ -71,14 +71,7 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-6">
-        <Link href={`/tasks/${id}/runs`} className="text-fg-muted hover:text-fg transition-colors">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </Link>
-        <h2 className="text-xl font-bold">{task.name} — run #{run.id}</h2>
-      </div>
+      <PageHeader title={`Run #${run.id}`} backHref={`/tasks/${id}/runs`} />
 
       <div className="flex flex-wrap gap-4 mb-6 text-sm card-raised rounded-lg px-4 py-3">
         <div>

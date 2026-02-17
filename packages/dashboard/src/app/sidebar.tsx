@@ -23,7 +23,7 @@ export function Sidebar() {
       {/* Hamburger button — mobile only */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed top-4 left-4 z-50 md:hidden btn-raised rounded-lg p-2"
+        className="fixed top-4 right-4 z-50 md:hidden btn-raised rounded-lg p-2"
         aria-label="Open menu"
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

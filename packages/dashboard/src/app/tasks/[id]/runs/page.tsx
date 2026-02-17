@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { RunsTable } from '../../../runs/runs-table';
+import { PageHeader } from '../../../components/page-header';
 
 const API_URL = process.env.API_URL || 'http://localhost:3033';
 
@@ -41,14 +41,7 @@ export default async function TaskRunsPage({ params }: { params: Promise<{ id: s
 
   return (
     <div>
-      <div className="flex items-center gap-2 mb-6">
-        <Link href="/tasks" className="text-fg-muted hover:text-fg transition-colors">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </Link>
-        <h2 className="text-xl font-bold">{task.name} — runs</h2>
-      </div>
+      <PageHeader title={`${task.name} — runs`} backHref="/tasks" />
 
       {runs.length === 0 ? (
         <p className="text-fg-muted">No runs yet.</p>

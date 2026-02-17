@@ -1,4 +1,5 @@
 import { MessagesView } from './messages-view';
+import { PageHeader } from '../components/page-header';
 
 const API_URL = process.env.API_URL || 'http://localhost:3033';
 
@@ -35,7 +36,7 @@ export default async function MessagesPage() {
   const [groups, dailyCounts] = await Promise.all([getGroups(), getDailyCounts()]);
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Messages</h2>
+      <PageHeader title="Messages" />
       <MessagesView groups={groups} dailyCounts={dailyCounts} />
     </div>
   );

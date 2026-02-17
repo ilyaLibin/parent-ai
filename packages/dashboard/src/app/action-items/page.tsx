@@ -1,4 +1,5 @@
 import { ActionItemsView } from './action-items-view';
+import { PageHeader } from '../components/page-header';
 
 const API_URL = process.env.API_URL || 'http://localhost:3033';
 
@@ -25,7 +26,7 @@ export default async function ActionItemsPage() {
   const items = await getActionItems();
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Action Items</h2>
+      <PageHeader title="Action Items" />
       <ActionItemsView initialItems={items} />
     </div>
   );

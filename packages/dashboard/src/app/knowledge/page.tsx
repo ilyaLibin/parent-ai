@@ -1,4 +1,5 @@
 import { KnowledgeList } from './knowledge-list';
+import { PageHeader } from '../components/page-header';
 
 const API_URL = process.env.API_URL || 'http://localhost:3033';
 
@@ -21,7 +22,7 @@ export default async function KnowledgePage() {
   const entries = await getKnowledge();
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Knowledge</h2>
+      <PageHeader title="Knowledge" />
       <KnowledgeList entries={entries} />
     </div>
   );
