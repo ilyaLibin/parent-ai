@@ -1,5 +1,4 @@
-import { TasksGrid } from './tasks-grid';
-import { PageHeader } from '../components/page-header';
+import { TasksPageTabs } from './tasks-page-tabs';
 
 const API_URL = process.env.API_URL || 'http://localhost:3033';
 
@@ -27,6 +26,7 @@ export interface TaskRun {
   success: number | null;
   error: string | null;
   model: string | null;
+  token_usage_json: string | null;
 }
 
 async function getTasks(): Promise<Task[]> {
@@ -35,14 +35,14 @@ async function getTasks(): Promise<Task[]> {
   return res.json();
 }
 
-async function getRecentRuns(): Promise<TaskRun[]> {
+async function getRuns(): Promise<TaskRun[]> {
   const res = await fetch(`${API_URL}/task-runs?limit=200`, { cache: 'no-store' });
   if (!res.ok) return [];
   return res.json();
 }
 
 export default async function TasksPage() {
-  const [tasks, runs] = await Promise.all([getTasks(), getRecentRuns()]);
+  const [tasks, runs] = await Promise.all([getTasks(), getRuns()]);
 
   // Build map of taskId -> latest run
   const lastRunMap: Record<number, TaskRun> = {};
@@ -52,10 +52,14 @@ export default async function TasksPage() {
     }
   }
 
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
   return (
-    <div>
-      <PageHeader title="Tasks" />
-      <TasksGrid initialTasks={tasks} lastRunMap={lastRunMap} />
-    </div>
+    <TasksPageTabs
+      tasks={tasks}
+      lastRunMap={lastRunMap}
+      runs={runs}
+      taskMap={taskMap}
+    />
   );
 }

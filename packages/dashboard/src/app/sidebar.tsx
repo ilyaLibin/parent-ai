@@ -7,10 +7,9 @@ import { ThemeToggle } from './components/theme-toggle';
 
 const links = [
   { href: '/tasks', label: 'tasks' },
-  { href: '/runs', label: 'runs' },
+  { href: '/action-items', label: 'action items' },
   { href: '/knowledge', label: 'knowledge' },
   { href: '/messages', label: 'messages' },
-  { href: '/action-items', label: 'action items' },
   { href: '/logs', label: 'logs' },
 ];
 
