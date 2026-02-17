@@ -7,6 +7,8 @@ import { task } from './routes/task.routes.js';
 import { knowledge } from './routes/knowledge.routes.js';
 import { actionItems } from './routes/action-items.routes.js';
 import { ai } from './routes/ai.routes.js';
+import { integrations } from './routes/integrations.routes.js';
+import { calendar } from './routes/calendar.routes.js';
 
 const app = new Hono();
 
@@ -33,5 +35,7 @@ app.route('/', task);
 app.route('/', knowledge);
 app.route('/', actionItems);
 app.route('/', ai);
+app.route('/', integrations);
+app.route('/', calendar);
 
 export { app };

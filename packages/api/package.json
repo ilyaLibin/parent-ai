@@ -8,11 +8,12 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@parent-ai/shared": "*",
     "@anthropic-ai/sdk": "^0.52.0",
     "@hono/node-server": "^1.19.9",
-    "hono": "^4.11.9",
-    "dotenv": "^16.4.7"
+    "@parent-ai/shared": "*",
+    "dotenv": "^16.4.7",
+    "googleapis": "^171.4.0",
+    "hono": "^4.11.9"
   },
   "devDependencies": {
     "@types/node": "^22.13.1",

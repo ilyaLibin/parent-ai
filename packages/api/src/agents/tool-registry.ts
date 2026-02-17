@@ -12,6 +12,7 @@ import {
   type Group,
 } from '@parent-ai/shared';
 import { sendTelegram } from '../services/telegram.service.js';
+import { createCalendarEvent as createGCalEvent } from '../services/google-calendar.service.js';
 
 const anthropic = new Anthropic();
 
@@ -147,6 +148,41 @@ export const toolDefinitions: Anthropic.Tool[] = [
       required: ['description', 'date'],
     },
   },
+  {
+    name: 'createCalendarEvent',
+    description:
+      'Create a Google Calendar event. Use this when the user asks to schedule something or when an action item should be added to the calendar.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        summary: {
+          type: 'string',
+          description: 'Event title.',
+        },
+        description: {
+          type: 'string',
+          description: 'Optional event description or details.',
+        },
+        startDate: {
+          type: 'string',
+          description: 'Start date in YYYY-MM-DD format for all-day events, or ISO 8601 datetime for timed events.',
+        },
+        endDate: {
+          type: 'string',
+          description: 'Optional end date/datetime. Defaults to the same as startDate.',
+        },
+        isAllDay: {
+          type: 'boolean',
+          description: 'Whether this is an all-day event (true) or has specific times (false).',
+        },
+        color: {
+          type: 'string',
+          description: 'Optional Google Calendar color name (e.g. "tomato", "banana", "sage") or numeric color ID (1-11).',
+        },
+      },
+      required: ['summary', 'startDate', 'isAllDay'],
+    },
+  },
 ];
 
 const toolImplementations: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
@@ -254,6 +290,22 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
     const to = args.to as string | undefined;
     const items = getActionItems(from, to);
     return { count: items.length, items: items.map((i) => ({ id: i.id, description: i.description, date: i.date, sourceGroupName: i.source_group_name })) };
+  },
+
+  async createCalendarEvent(args) {
+    try {
+      const result = await createGCalEvent({
+        summary: args.summary as string,
+        description: args.description as string | undefined,
+        startDate: args.startDate as string,
+        endDate: args.endDate as string | undefined,
+        isAllDay: args.isAllDay as boolean,
+        color: args.color as string | undefined,
+      });
+      return { success: true, eventId: result.eventId, htmlLink: result.htmlLink };
+    } catch (err) {
+      return { success: false, error: `Failed to create calendar event: ${err instanceof Error ? err.message : String(err)}` };
+    }
   },
 
   async createActionItem(args) {

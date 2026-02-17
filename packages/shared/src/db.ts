@@ -110,6 +110,27 @@ db.exec(`
     dismissed INTEGER DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_action_items_date ON action_items(date);
+
+  CREATE TABLE IF NOT EXISTS integrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL UNIQUE,
+    config_json TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS integration_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    integration_type TEXT NOT NULL UNIQUE,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_type TEXT NOT NULL DEFAULT 'Bearer',
+    expiry_date INTEGER,
+    scope TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 // Migrate: add color column to action_items if missing
@@ -757,6 +778,80 @@ export function dismissActionItem(id: number): boolean {
 
 export function deleteActionItem(id: number): boolean {
   return db.prepare('DELETE FROM action_items WHERE id = ?').run(id).changes > 0;
+}
+
+// Integrations
+export interface Integration {
+  id: number;
+  type: string;
+  config_json: string;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+interface IntegrationRow {
+  id: number;
+  type: string;
+  config_json: string;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+function rowToIntegration(row: IntegrationRow): Integration {
+  return { ...row, enabled: row.enabled === 1 };
+}
+
+export function getIntegration(type: string): Integration | undefined {
+  const row = db.prepare('SELECT * FROM integrations WHERE type = ?').get(type) as IntegrationRow | undefined;
+  return row ? rowToIntegration(row) : undefined;
+}
+
+export function saveIntegration(type: string, configJson: string, enabled = true): Integration {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO integrations (type, config_json, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(type) DO UPDATE SET config_json = excluded.config_json, enabled = excluded.enabled, updated_at = excluded.updated_at
+  `).run(type, configJson, enabled ? 1 : 0, now, now);
+  return getIntegration(type)!;
+}
+
+export function deleteIntegration(type: string): boolean {
+  const result = db.prepare('DELETE FROM integrations WHERE type = ?').run(type);
+  db.prepare('DELETE FROM integration_tokens WHERE integration_type = ?').run(type);
+  return result.changes > 0;
+}
+
+export interface IntegrationToken {
+  id: number;
+  integration_type: string;
+  access_token: string;
+  refresh_token: string | null;
+  token_type: string;
+  expiry_date: number | null;
+  scope: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export function getIntegrationToken(type: string): IntegrationToken | undefined {
+  return db.prepare('SELECT * FROM integration_tokens WHERE integration_type = ?').get(type) as IntegrationToken | undefined;
+}
+
+export function saveIntegrationToken(type: string, token: { access_token: string; refresh_token?: string | null; token_type?: string; expiry_date?: number | null; scope?: string | null }): IntegrationToken {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO integration_tokens (integration_type, access_token, refresh_token, token_type, expiry_date, scope, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(integration_type) DO UPDATE SET access_token = excluded.access_token, refresh_token = excluded.refresh_token, token_type = excluded.token_type, expiry_date = excluded.expiry_date, scope = excluded.scope, updated_at = excluded.updated_at
+  `).run(type, token.access_token, token.refresh_token ?? null, token.token_type ?? 'Bearer', token.expiry_date ?? null, token.scope ?? null, now, now);
+  return getIntegrationToken(type)!;
+}
+
+export function deleteIntegrationToken(type: string): boolean {
+  return db.prepare('DELETE FROM integration_tokens WHERE integration_type = ?').run(type).changes > 0;
 }
 
 export { db };

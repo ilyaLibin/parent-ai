@@ -11,6 +11,7 @@ const links = [
   { href: '/knowledge', label: 'knowledge' },
   { href: '/messages', label: 'messages' },
   { href: '/logs', label: 'logs' },
+  { href: '/settings', label: 'settings' },
 ];
 
 export function Sidebar() {
