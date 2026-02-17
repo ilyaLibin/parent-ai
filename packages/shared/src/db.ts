@@ -112,6 +112,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_action_items_date ON action_items(date);
 `);
 
+// Migrate: add color column to action_items if missing
+const actionColumns = db.pragma('table_info(action_items)') as { name: string }[];
+const actionColNames = new Set(actionColumns.map((c) => c.name));
+if (!actionColNames.has('color')) db.exec('ALTER TABLE action_items ADD COLUMN color TEXT');
+
 // Migrate: add new columns to cron_jobs if missing (for existing databases)
 const cronColumns = db.pragma('table_info(cron_jobs)') as { name: string }[];
 const cronColNames = new Set(cronColumns.map((c) => c.name));
@@ -709,6 +714,7 @@ export interface ActionItem {
   source_group_id: string | null;
   source_group_name: string | null;
   summary: string | null;
+  color: string | null;
   created_at: string;
   dismissed: boolean;
 }
@@ -720,6 +726,7 @@ interface ActionItemRow {
   source_group_id: string | null;
   source_group_name: string | null;
   summary: string | null;
+  color: string | null;
   created_at: string;
   dismissed: number;
 }
@@ -737,10 +744,10 @@ export function getActionItems(from?: string, to?: string): ActionItem[] {
   return (db.prepare(`SELECT * FROM action_items WHERE ${where} ORDER BY date ASC, id ASC`).all(...params) as ActionItemRow[]).map(rowToActionItem);
 }
 
-export function createActionItem(item: { description: string; date: string; source_group_id?: string | null; source_group_name?: string | null; summary?: string | null }): ActionItem {
+export function createActionItem(item: { description: string; date: string; source_group_id?: string | null; source_group_name?: string | null; summary?: string | null; color?: string | null }): ActionItem {
   const result = db.prepare(
-    'INSERT INTO action_items (description, date, source_group_id, source_group_name, summary) VALUES (?, ?, ?, ?, ?)'
-  ).run(item.description, item.date, item.source_group_id ?? null, item.source_group_name ?? null, item.summary ?? null);
+    'INSERT INTO action_items (description, date, source_group_id, source_group_name, summary, color) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(item.description, item.date, item.source_group_id ?? null, item.source_group_name ?? null, item.summary ?? null, item.color ?? null);
   return rowToActionItem(db.prepare('SELECT * FROM action_items WHERE id = ?').get(result.lastInsertRowid) as ActionItemRow);
 }
 

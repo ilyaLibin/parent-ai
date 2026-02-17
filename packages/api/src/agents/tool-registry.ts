@@ -139,6 +139,10 @@ export const toolDefinitions: Anthropic.Tool[] = [
           type: 'string',
           description: 'Summary of the message or exchange the item was extracted from.',
         },
+        color: {
+          type: 'string',
+          description: 'Color hex code for the action item. Use the "Action Item colors" knowledge entry to determine the correct color based on the source group.',
+        },
       },
       required: ['description', 'date'],
     },
@@ -259,6 +263,7 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
       source_group_id: args.sourceGroupId as string | undefined,
       source_group_name: args.sourceGroupName as string | undefined,
       summary: args.summary as string | undefined,
+      color: args.color as string | undefined,
     });
     return { success: true, id: item.id, description: item.description, date: item.date };
   },

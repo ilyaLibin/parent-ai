@@ -12,6 +12,7 @@ export interface ActionItem {
   source_group_id: string | null;
   source_group_name: string | null;
   summary: string | null;
+  color: string | null;
   created_at: string;
   dismissed: boolean;
 }

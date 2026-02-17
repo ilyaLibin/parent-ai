@@ -242,25 +242,39 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
         </div>
 
         <div className="flex-1 overflow-y-auto px-1 pb-1 space-y-0.5">
-          {dayItems.slice(0, limit).map((item) => (
-            <button
-              key={item.id}
-              onClick={() =>
-                setExpandedItem(expandedItem === item.id ? null : item.id)
-              }
-              className={`w-full text-left rounded px-1.5 py-1 text-sm leading-snug font-medium transition-colors ${
-                truncate ? 'truncate' : ''
-              } ${
-                expandedItem === item.id
-                  ? 'bg-accent text-white ring-2 ring-accent ring-offset-1 border border-accent'
-                  : 'bg-accent-subtle text-accent border border-accent/20 hover:bg-accent hover:text-white hover:border-accent'
-              }`}
-              dir="auto"
-              title={item.description}
-            >
-              <span className="font-content">{item.description}</span>
-            </button>
-          ))}
+          {dayItems.slice(0, limit).map((item) => {
+            const color = item.color;
+            const isSelected = expandedItem === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() =>
+                  setExpandedItem(isSelected ? null : item.id)
+                }
+                className={`w-full text-left rounded px-1.5 py-1 text-sm leading-snug font-medium transition-colors ${
+                  truncate ? 'truncate' : ''
+                } ${
+                  !color
+                    ? isSelected
+                      ? 'bg-accent text-white ring-2 ring-accent ring-offset-1 border border-accent'
+                      : 'bg-accent-subtle text-accent border border-accent/20 hover:bg-accent hover:text-white hover:border-accent'
+                    : ''
+                }`}
+                style={color ? {
+                  backgroundColor: isSelected ? color : `${color}20`,
+                  color: isSelected ? 'white' : color,
+                  borderWidth: '1px',
+                  borderStyle: 'solid',
+                  borderColor: isSelected ? color : `${color}40`,
+                  ...(isSelected ? { boxShadow: `0 0 0 2px ${color}`, outline: `1px solid ${color}` } : {}),
+                } : undefined}
+                dir="auto"
+                title={item.description}
+              >
+                <span className="font-content">{item.description}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     );
@@ -430,6 +444,9 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
               <p className="text-base font-bold text-fg pr-6 font-content" dir="auto">{item.description}</p>
 
               <div className="flex items-center gap-3 mt-2">
+                {item.color && (
+                  <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                )}
                 <span className="text-sm text-fg-muted">
                   {new Date(item.date + 'T00:00:00').toLocaleDateString('en', {
                     weekday: 'short',
@@ -438,7 +455,7 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                   })}
                 </span>
                 {item.source_group_name && (
-                  <span className="text-sm text-accent font-content">{item.source_group_name}</span>
+                  <span className="text-sm font-content" style={{ color: item.color || undefined }}>{item.source_group_name}</span>
                 )}
               </div>
 

@@ -22,6 +22,7 @@ actionItems.post('/action-items', async (c) => {
     sourceGroupId?: string;
     sourceGroupName?: string;
     summary?: string;
+    color?: string;
   }>();
 
   if (!body.description || !body.date) {
@@ -34,6 +35,7 @@ actionItems.post('/action-items', async (c) => {
     source_group_id: body.sourceGroupId,
     source_group_name: body.sourceGroupName,
     summary: body.summary,
+    color: body.color,
   });
   return c.json(item, 201);
 });
