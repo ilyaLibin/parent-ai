@@ -98,8 +98,9 @@ function groupMessagesByDay(allMessages: (Message & { groupName?: string })[]): 
 
 export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { groups: Group[]; dailyCounts: DailyCount[] }) {
   const todayStr = formatLocalDate(new Date());
+  const weekAgoStr = formatLocalDate((() => { const d = new Date(); d.setDate(d.getDate() - 6); return d; })());
 
-  const [fromDate, setFromDate] = useState<string>(todayStr);
+  const [fromDate, setFromDate] = useState<string>(weekAgoStr);
   const [toDate, setToDate] = useState<string>(todayStr);
   const [selecting, setSelecting] = useState(false);
   const [checkedGroupIds, setCheckedGroupIds] = useState<Set<string>>(new Set());
@@ -368,17 +369,17 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
             {rangeLabel}
             {selecting && <span className="text-fg-muted ml-2">click another day to set range</span>}
           </span>
-          {fromDate !== todayStr || toDate !== todayStr ? (
+          {fromDate !== weekAgoStr || toDate !== todayStr ? (
             <button
               onClick={() => {
-                setFromDate(todayStr);
+                setFromDate(weekAgoStr);
                 setToDate(todayStr);
                 setSelecting(false);
-                if (hasSelection) loadMessages(todayStr, todayStr);
+                if (hasSelection) loadMessages(weekAgoStr, todayStr);
               }}
               className="text-xs text-accent hover:text-accent-hover"
             >
-              reset to today
+              reset to this week
             </button>
           ) : null}
         </div>
