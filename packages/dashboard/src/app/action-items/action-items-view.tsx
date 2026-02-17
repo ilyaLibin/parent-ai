@@ -7,11 +7,27 @@ function formatLocalDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function addDays(d: Date, n: number): Date {
+  const result = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  result.setDate(result.getDate() + n);
+  return result;
+}
+
 /** Get the Sunday that starts the week containing `d` */
 function getWeekStart(d: Date): Date {
-  const result = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  result.setDate(result.getDate() - result.getDay());
-  return result;
+  return addDays(d, -d.getDay());
+}
+
+function useIsMobile(breakpoint = 768) {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    setMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [breakpoint]);
+  return mobile;
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -46,14 +62,17 @@ type ViewMode = 'month' | 'week';
 export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }) {
   const [items, setItems] = useState<ActionItem[]>(initialItems);
   const today = new Date();
+  const isMobile = useIsMobile();
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [weekStart, setWeekStart] = useState(() => getWeekStart(today));
+  // On desktop: Sunday of the current week. On mobile: any start date (steps by 3).
+  const [rangeStart, setRangeStart] = useState(() => getWeekStart(today));
   const [expandedItem, setExpandedItem] = useState<number | null>(null);
   const [dismissing, setDismissing] = useState<number | null>(null);
 
   const todayStr = formatLocalDate(today);
+  const visibleDays = isMobile ? 3 : 7;
 
   // Flat sorted list for prev/next navigation
   const sortedItems = useMemo(
@@ -109,20 +128,18 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
   const totalCells = firstDay + daysInMonth;
   const rows = Math.ceil(totalCells / 7);
 
-  // Week view helpers
-  const weekDates = useMemo(() => {
+  // Week/days view: generate visible dates
+  const rangeDates = useMemo(() => {
     const dates: Date[] = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(weekStart);
-      d.setDate(d.getDate() + i);
-      dates.push(d);
+    for (let i = 0; i < visibleDays; i++) {
+      dates.push(addDays(rangeStart, i));
     }
     return dates;
-  }, [weekStart]);
+  }, [rangeStart, visibleDays]);
 
-  const weekLabel = useMemo(() => {
-    const start = weekDates[0];
-    const end = weekDates[6];
+  const rangeLabel = useMemo(() => {
+    const start = rangeDates[0];
+    const end = rangeDates[rangeDates.length - 1];
     const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
     if (start.getFullYear() !== end.getFullYear()) {
       return `${start.toLocaleDateString('en', { ...opts, year: 'numeric' })} — ${end.toLocaleDateString('en', { ...opts, year: 'numeric' })}`;
@@ -131,13 +148,11 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
       return `${start.toLocaleDateString('en', opts)} — ${end.toLocaleDateString('en', opts)}, ${end.getFullYear()}`;
     }
     return `${start.toLocaleDateString('en', { month: 'long' })} ${start.getDate()} — ${end.getDate()}, ${end.getFullYear()}`;
-  }, [weekDates]);
+  }, [rangeDates]);
 
   function prevPeriod() {
     if (viewMode === 'week') {
-      const d = new Date(weekStart);
-      d.setDate(d.getDate() - 7);
-      setWeekStart(d);
+      setRangeStart(addDays(rangeStart, -visibleDays));
     } else {
       if (viewMonth === 0) { setViewYear(viewYear - 1); setViewMonth(11); }
       else setViewMonth(viewMonth - 1);
@@ -146,19 +161,35 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
 
   function nextPeriod() {
     if (viewMode === 'week') {
-      const d = new Date(weekStart);
-      d.setDate(d.getDate() + 7);
-      setWeekStart(d);
+      setRangeStart(addDays(rangeStart, visibleDays));
     } else {
       if (viewMonth === 11) { setViewYear(viewYear + 1); setViewMonth(0); }
       else setViewMonth(viewMonth + 1);
     }
   }
 
+  // Snap rangeStart when switching between mobile/desktop
+  useEffect(() => {
+    if (viewMode !== 'week') return;
+    if (isMobile) {
+      // On mobile, snap to nearest 3-day window containing today (or keep current)
+    } else {
+      // On desktop, snap to the Sunday of the current rangeStart's week
+      const snapped = getWeekStart(rangeStart);
+      if (snapped.getTime() !== rangeStart.getTime()) {
+        setRangeStart(snapped);
+      }
+    }
+  }, [isMobile, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function goToToday() {
     setViewYear(today.getFullYear());
     setViewMonth(today.getMonth());
-    setWeekStart(getWeekStart(today));
+    if (isMobile) {
+      setRangeStart(today);
+    } else {
+      setRangeStart(getWeekStart(today));
+    }
   }
 
   async function handleDismiss(e: React.MouseEvent, id: number) {
@@ -186,7 +217,7 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
   }
 
   // Shared day cell renderer
-  function renderDayCell(dateStr: string, dayNum: number, isToday: boolean, maxItems?: number) {
+  function renderDayCell(dateStr: string, dayNum: number, isToday: boolean, truncate: boolean, maxItems?: number) {
     const dayItems = itemsByDate.get(dateStr) || [];
     const limit = maxItems ?? dayItems.length;
     const overflow = dayItems.length > limit ? dayItems.length - limit : 0;
@@ -226,10 +257,12 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
               onClick={() =>
                 setExpandedItem(expandedItem === item.id ? null : item.id)
               }
-              className={`w-full text-left rounded px-1.5 py-1 text-sm leading-snug truncate font-medium transition-colors ${
+              className={`w-full text-left rounded px-1.5 py-1 text-sm leading-snug font-medium transition-colors ${
+                truncate ? 'truncate' : ''
+              } ${
                 expandedItem === item.id
-                  ? 'bg-accent text-white ring-2 ring-accent ring-offset-1'
-                  : 'bg-accent-subtle text-accent hover:bg-accent hover:text-white'
+                  ? 'bg-accent text-white ring-2 ring-accent ring-offset-1 border border-accent'
+                  : 'bg-accent-subtle text-accent border border-accent/20 hover:bg-accent hover:text-white hover:border-accent'
               }`}
               dir="auto"
               title={item.description}
@@ -257,27 +290,34 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
             &larr;
           </button>
           <h3 className="text-lg font-bold text-fg min-w-[180px] text-center">
-            {viewMode === 'month' ? monthLabel : weekLabel}
+            {viewMode === 'month' ? monthLabel : rangeLabel}
           </h3>
           <button onClick={nextPeriod} className="btn-raised rounded-md px-2.5 py-1.5 text-sm">
             &rarr;
           </button>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-fg-muted">
+          <span className="text-xs text-fg-muted hidden sm:inline">
             {items.length} active item{items.length !== 1 ? 's' : ''}
           </span>
           {/* View mode toggle */}
           <div className="flex rounded-md overflow-hidden border border-border">
             <button
-              onClick={() => setViewMode('week')}
+              onClick={() => {
+                setViewMode('week');
+                if (isMobile) {
+                  setRangeStart(today);
+                } else {
+                  setRangeStart(getWeekStart(today));
+                }
+              }}
               className={`px-2.5 py-1 text-xs font-medium transition-colors ${
                 viewMode === 'week'
                   ? 'bg-accent text-white'
                   : 'bg-raised text-fg-secondary hover:text-fg'
               }`}
             >
-              week
+              {isMobile ? '3 days' : 'week'}
             </button>
             <button
               onClick={() => setViewMode('month')}
@@ -299,41 +339,56 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
         </div>
       </div>
 
-      {/* Weekday headers */}
-      <div className="grid grid-cols-7 border-b border-border">
-        {WEEKDAYS.map((day) => (
-          <div key={day} className="text-xs text-fg-muted font-medium py-2 text-center">
-            {day}
-          </div>
-        ))}
-      </div>
-
-      {/* Calendar grid */}
+      {/* Weekday headers + grid */}
       {viewMode === 'month' ? (
-        <div
-          className="grid grid-cols-7 flex-1 min-h-0"
-          style={{ gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}
-        >
-          {monthCells.map((day, i) => {
-            if (day === null) {
-              return (
-                <div
-                  key={`empty-${i}`}
-                  className="border-b border-r border-border-subtle bg-surface/50"
-                />
-              );
-            }
-            const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            return renderDayCell(dateStr, day, dateStr === todayStr, 3);
-          })}
-        </div>
+        <>
+          <div className="grid grid-cols-7 border-b border-border">
+            {WEEKDAYS.map((day) => (
+              <div key={day} className="text-xs text-fg-muted font-medium py-2 text-center">
+                {day}
+              </div>
+            ))}
+          </div>
+          <div
+            className="grid grid-cols-7 flex-1 min-h-0"
+            style={{ gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}
+          >
+            {monthCells.map((day, i) => {
+              if (day === null) {
+                return (
+                  <div
+                    key={`empty-${i}`}
+                    className="border-b border-r border-border-subtle bg-surface/50"
+                  />
+                );
+              }
+              const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              return renderDayCell(dateStr, day, dateStr === todayStr, true, 3);
+            })}
+          </div>
+        </>
       ) : (
-        <div className="grid grid-cols-7 flex-1 min-h-0">
-          {weekDates.map((d) => {
-            const dateStr = formatLocalDate(d);
-            return renderDayCell(dateStr, d.getDate(), dateStr === todayStr);
-          })}
-        </div>
+        <>
+          <div
+            className="grid border-b border-border"
+            style={{ gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))` }}
+          >
+            {rangeDates.map((d, i) => (
+              <div key={i} className="text-xs text-fg-muted font-medium py-2 text-center">
+                {WEEKDAYS[d.getDay()]} {d.getDate()}
+              </div>
+            ))}
+          </div>
+          <div
+            className="grid flex-1 min-h-0"
+            style={{ gridTemplateColumns: `repeat(${visibleDays}, minmax(0, 1fr))` }}
+          >
+            {rangeDates.map((d) => {
+              const dateStr = formatLocalDate(d);
+              return renderDayCell(dateStr, d.getDate(), dateStr === todayStr, false);
+            })}
+          </div>
+        </>
       )}
 
       {/* Detail modal */}
