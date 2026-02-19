@@ -268,10 +268,9 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                   borderColor: isSelected ? color : `${color}40`,
                   ...(isSelected ? { boxShadow: `0 0 0 2px ${color}`, outline: `1px solid ${color}` } : {}),
                 } : undefined}
-                dir="auto"
                 title={item.description}
               >
-                <span className="font-content">{item.description}</span>
+                <span className="font-content" dir="auto">{item.description}</span>
               </button>
             );
           })}
@@ -441,7 +440,7 @@ export function ActionItemsView({ initialItems }: { initialItems: ActionItem[] }
                 </button>
               </div>
 
-              <p className="text-base font-bold text-fg pr-6 font-content" dir="auto">{item.description}</p>
+              <p className="text-base font-bold text-fg font-content" dir="auto">{item.description}</p>
 
               <div className="flex items-center gap-3 mt-2">
                 {item.color && (
