@@ -8,11 +8,14 @@ const PRICE_PER_M: Record<string, { input: number; output: number }> = {
   opus: { input: 15.00, output: 75.00 },
 };
 
-function estimateCost(model: string | null, tokens: { input_tokens: number; output_tokens: number } | null): string | null {
+function estimateCost(model: string | null, tokens: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | null): string | null {
   if (!tokens || !model) return null;
   const prices = PRICE_PER_M[model];
   if (!prices) return null;
-  const cost = (tokens.input_tokens * prices.input + tokens.output_tokens * prices.output) / 1_000_000;
+  const cacheWrite = tokens.cache_creation_input_tokens || 0;
+  const cacheRead = tokens.cache_read_input_tokens || 0;
+  const nonCachedInput = tokens.input_tokens - cacheWrite - cacheRead;
+  const cost = (nonCachedInput * prices.input + cacheWrite * prices.input * 1.25 + cacheRead * prices.input * 0.1 + tokens.output_tokens * prices.output) / 1_000_000;
   if (cost < 0.005) return '<$0.01';
   return `$${cost.toFixed(2)}`;
 }

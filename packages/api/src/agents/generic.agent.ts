@@ -68,7 +68,8 @@ Rules:
 - Do NOT send Telegram messages unless the user explicitly asks for it.
 - Do NOT assume the user wants notifications or reports sent anywhere unless stated.
 - When the user asks for "all messages" or doesn't specify a time range, use a large hoursBack value (e.g. 720 for 30 days) to capture as much history as possible.
-- Follow the user's instructions precisely — don't add extra steps.`,
+- Follow the user's instructions precisely — don't add extra steps.
+- When transcribing images: be selective. Start with 1-2 images that look relevant based on context (sender, timing, surrounding messages). If an image turns out to be irrelevant (e.g. a sticker, meme, or off-topic photo), skip remaining images from the same sender. Don't blindly transcribe every image.`,
       cache_control: { type: 'ephemeral' },
     },
   ];
