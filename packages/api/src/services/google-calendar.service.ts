@@ -112,12 +112,14 @@ export async function createCalendarEvent(params: {
     if (/^\d+$/.test(colorId)) event.colorId = colorId;
   }
 
+  const timeZone = 'Asia/Jerusalem';
+
   if (params.isAllDay) {
-    event.start = { date: params.startDate };
-    event.end = { date: params.endDate || params.startDate };
+    event.start = { date: params.startDate, timeZone };
+    event.end = { date: params.endDate || params.startDate, timeZone };
   } else {
-    event.start = { dateTime: params.startDate };
-    event.end = { dateTime: params.endDate || params.startDate };
+    event.start = { dateTime: params.startDate, timeZone };
+    event.end = { dateTime: params.endDate || params.startDate, timeZone };
   }
 
   const res = await calendar.events.insert({

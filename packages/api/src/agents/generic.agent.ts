@@ -74,7 +74,7 @@ Rules:
   let resultText: string | null = null;
 
   try {
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       console.log(`[agent] Step ${i + 1}, messages=${messages.length}`);
 
       const response = await anthropic.messages.create({
