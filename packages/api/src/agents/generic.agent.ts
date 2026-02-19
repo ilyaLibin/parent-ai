@@ -54,18 +54,31 @@ export async function runGenericAgent(opts: {
   const runId = createTaskRun({ task_id: opts.taskId, started_at: startedAt, model: modelKey });
 
   const steps: StepEntry[] = [];
-  const tokenUsage = { input_tokens: 0, output_tokens: 0 };
+  const tokenUsage = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
 
   const prompt = injectTemplateVars(opts.prompt);
 
-  const systemPrompt = `You are a helpful assistant that executes tasks using the provided tools.
+  const systemPrompt: Anthropic.TextBlockParam[] = [
+    {
+      type: 'text',
+      text: `You are a helpful assistant that executes tasks using the provided tools.
 
 Rules:
 - Only use tools that are necessary to fulfill the user's request.
 - Do NOT send Telegram messages unless the user explicitly asks for it.
 - Do NOT assume the user wants notifications or reports sent anywhere unless stated.
 - When the user asks for "all messages" or doesn't specify a time range, use a large hoursBack value (e.g. 720 for 30 days) to capture as much history as possible.
-- Follow the user's instructions precisely — don't add extra steps.`;
+- Follow the user's instructions precisely — don't add extra steps.`,
+      cache_control: { type: 'ephemeral' },
+    },
+  ];
+
+  // Mark last tool for caching so the full tool array is cached
+  const cachedTools = toolDefinitions.map((tool, i) =>
+    i === toolDefinitions.length - 1
+      ? { ...tool, cache_control: { type: 'ephemeral' as const } }
+      : tool
+  );
 
   const messages: Anthropic.MessageParam[] = [
     { role: 'user', content: prompt },
@@ -81,12 +94,15 @@ Rules:
         model: modelId,
         max_tokens: 4096,
         system: systemPrompt,
-        tools: toolDefinitions,
+        tools: cachedTools,
         messages,
       });
 
       tokenUsage.input_tokens += response.usage.input_tokens;
       tokenUsage.output_tokens += response.usage.output_tokens;
+      const usage = response.usage as unknown as Record<string, number>;
+      tokenUsage.cache_creation_input_tokens += usage.cache_creation_input_tokens || 0;
+      tokenUsage.cache_read_input_tokens += usage.cache_read_input_tokens || 0;
 
       for (const block of response.content) {
         if (block.type === 'text') {
