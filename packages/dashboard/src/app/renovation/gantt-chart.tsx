@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import type { RenovationJob, RenovationPhase } from './page';
 
 type ZoomLevel = 'month' | 'week' | '3day' | 'day';
+type LabelPosition = 'outside' | 'inside';
 const ZOOM_LEVELS: ZoomLevel[] = ['month', 'week', '3day', 'day'];
 
 interface Props {
@@ -71,6 +72,33 @@ const BAR_COLORS: Record<string, { bg: string; border: string }> = {
   quoted: { bg: 'bg-amber-400/90', border: 'border-amber-500' },
   assigned: { bg: 'bg-emerald-400/90', border: 'border-emerald-500' },
 };
+
+// ── lane assignment for stacked inside labels ──
+
+interface LaneAssignment { phase: RenovationPhase; lane: number }
+
+function assignLanes(phases: RenovationPhase[]): { assignments: LaneAssignment[]; laneCount: number } {
+  if (phases.length === 0) return { assignments: [], laneCount: 0 };
+  const sorted = [...phases].sort((a, b) => {
+    const cmp = a.start_date.localeCompare(b.start_date);
+    return cmp !== 0 ? cmp : a.end_date.localeCompare(b.end_date);
+  });
+  const laneEnds: string[] = [];
+  const assignments: LaneAssignment[] = [];
+  for (const phase of sorted) {
+    let lane = -1;
+    for (let i = 0; i < laneEnds.length; i++) {
+      if (laneEnds[i] < phase.start_date) { lane = i; break; }
+    }
+    if (lane === -1) { lane = laneEnds.length; laneEnds.push(phase.end_date); }
+    else { laneEnds[lane] = phase.end_date; }
+    assignments.push({ phase, lane });
+  }
+  return { assignments, laneCount: laneEnds.length };
+}
+
+const LANE_HEIGHT = 22; // bar height + gap per lane
+const LANE_BAR_H = 18;
 
 // ── column building ──
 
@@ -204,22 +232,26 @@ interface BarProps {
   statusClasses?: { bg: string; border: string };
   isDragging: boolean;
   isActiveDrag: boolean;
+  labelPosition: LabelPosition;
+  lane?: number;
   onMouseDownMove: (e: React.MouseEvent) => void;
   onMouseDownLeft: (e: React.MouseEvent) => void;
   onMouseDownRight: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
 }
 
-function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
+function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, labelPosition, lane = 0, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
   const [hover, setHover] = useState(false);
   const useCustomColor = !!color;
   const days = daysBetween(startDate, endDate);
   const isSingleDay = barPos.isSingleDay;
+  const showInside = labelPosition === 'inside' && !isSingleDay;
+  const topOffset = labelPosition === 'inside' ? 6 + lane * LANE_HEIGHT : 6;
 
   return (
     <div
       className="absolute group/bar"
-      style={{ left: `${barPos.left}%`, width: isSingleDay ? 12 : `${barPos.width}%`, minWidth: isSingleDay ? 12 : 20, top: 6, zIndex: 5 }}
+      style={{ left: `${barPos.left}%`, width: isSingleDay ? 12 : `${barPos.width}%`, minWidth: isSingleDay ? 12 : 20, top: topOffset, zIndex: 5 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -233,11 +265,21 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
       ) : (
         <>
           <div
-            className={`h-[18px] rounded-md overflow-hidden ${useCustomColor ? 'border border-black/10' : `${statusClasses?.bg || 'bg-gray-400/90'} border ${statusClasses?.border || 'border-gray-500'}`}`}
+            className={`h-[18px] rounded-md ${showInside ? 'flex items-center' : ''} overflow-hidden ${useCustomColor ? 'border border-black/10' : `${statusClasses?.bg || 'bg-gray-400/90'} border ${statusClasses?.border || 'border-gray-500'}`}`}
             style={{ cursor: isDragging ? 'grabbing' : 'grab', ...(useCustomColor ? { backgroundColor: color } : {}) }}
             onMouseDown={onMouseDownMove}
             onDoubleClick={onDoubleClick}
-          />
+          >
+            {showInside && (
+              <span
+                className="text-[10px] font-medium font-content select-none truncate leading-none px-1.5 pointer-events-none"
+                style={{ color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+                dir="auto"
+              >
+                {label}
+              </span>
+            )}
+          </div>
           <div className="absolute left-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-start" onMouseDown={e => e.metaKey ? onMouseDownMove(e) : onMouseDownLeft(e)}>
             <div className="w-1 h-2.5 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity ml-0.5" />
           </div>
@@ -247,13 +289,15 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
         </>
       )}
 
-      {/* Connector line + label below */}
-      <div className="flex flex-col items-start" style={{ marginLeft: isSingleDay ? 5 : 0 }}>
-        <div className="w-px h-2 bg-fg-muted/40" />
-        <span className="text-xs text-fg-secondary font-medium font-content select-none whitespace-nowrap leading-tight" dir="auto">
-          {label}
-        </span>
-      </div>
+      {/* Connector line + label below (outside mode or single-day fallback) */}
+      {(!showInside) && (
+        <div className="flex flex-col items-start" style={{ marginLeft: isSingleDay ? 5 : 0 }}>
+          <div className="w-px h-2 bg-fg-muted/40" />
+          <span className="text-xs text-fg-secondary font-medium font-content select-none whitespace-nowrap leading-tight" dir="auto">
+            {label}
+          </span>
+        </div>
+      )}
 
       {/* Tooltip on hover */}
       {(hover || isActiveDrag) && (
@@ -277,6 +321,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
 
 export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob }: Props) {
   const [zoom, setZoom] = useState<ZoomLevel>('week');
+  const [labelPosition, setLabelPosition] = useState<LabelPosition>('outside');
   const zoomIdx = ZOOM_LEVELS.indexOf(zoom);
   const canZoomIn = zoomIdx < ZOOM_LEVELS.length - 1;
   const canZoomOut = zoomIdx > 0;
@@ -294,6 +339,14 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     }
     return map;
   }, [phases]);
+
+  const lanesByJob = useMemo(() => {
+    const map = new Map<number, { assignments: LaneAssignment[]; laneCount: number }>();
+    for (const [jobId, jobPhases] of phasesByJob.entries()) {
+      map.set(jobId, assignLanes(jobPhases));
+    }
+    return map;
+  }, [phasesByJob]);
 
   const [todayPos, setTodayPos] = useState<number | null>(null);
   useEffect(() => { setTodayPos(todayPosition(columns)); }, [columns]);
@@ -441,7 +494,23 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     <div className="card-raised rounded-xl overflow-hidden">
       {/* Zoom controls */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-hover/20">
-        <span className="text-xs text-fg-muted uppercase tracking-wider font-semibold">{zoom === '3day' ? '3-Day' : zoom}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-fg-muted uppercase tracking-wider font-semibold">{zoom === '3day' ? '3-Day' : zoom}</span>
+          <button
+            onClick={() => setLabelPosition(labelPosition === 'outside' ? 'inside' : 'outside')}
+            className="btn-raised rounded-md px-2 py-1 text-[10px] text-fg-secondary flex items-center gap-1"
+            title={`Labels: ${labelPosition}`}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {labelPosition === 'outside' ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h8m-8 6h16" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              )}
+            </svg>
+            {labelPosition === 'outside' ? 'Labels ↓' : 'Labels ←'}
+          </button>
+        </div>
         <div className="flex items-center gap-1">
           <button
             onClick={() => canZoomOut && setZoom(ZOOM_LEVELS[zoomIdx - 1])}
@@ -565,71 +634,84 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                   </td>
 
                   {/* Timeline */}
-                  <td
-                    colSpan={totalCols}
-                    className="relative p-0"
-                    style={{ height: 56 }}
-                    onMouseDown={onPanStart}
-                  >
-                    <div ref={timelineRef} className="absolute inset-0">
-                      {/* Grid lines */}
-                      <div className="absolute inset-0 flex pointer-events-none">
-                        {displayCols.map((col, i) => (
-                          <div key={i} className={`flex-1 border-l border-border-subtle ${col.isWeekend ? 'bg-surface-hover/30' : ''}`} />
-                        ))}
-                      </div>
+                  {(() => {
+                    const laneInfo = lanesByJob.get(job.id);
+                    const laneCount = laneInfo?.laneCount || 1;
+                    const rowH = labelPosition === 'inside'
+                      ? Math.max(56, laneCount * LANE_HEIGHT + 12)
+                      : 56;
+                    return (
+                      <td
+                        colSpan={totalCols}
+                        className="relative p-0"
+                        style={{ height: rowH }}
+                        onMouseDown={onPanStart}
+                      >
+                        <div ref={timelineRef} className="absolute inset-0">
+                          {/* Grid lines */}
+                          <div className="absolute inset-0 flex pointer-events-none">
+                            {displayCols.map((col, i) => (
+                              <div key={i} className={`flex-1 border-l border-border-subtle ${col.isWeekend ? 'bg-surface-hover/30' : ''}`} />
+                            ))}
+                          </div>
 
-                      {/* Today line */}
-                      {todayPos !== null && (
-                        <div className="absolute top-0 bottom-0 w-px bg-error/50 z-10 pointer-events-none" style={{ left: `${todayPos}%` }} />
-                      )}
+                          {/* Today line */}
+                          {todayPos !== null && (
+                            <div className="absolute top-0 bottom-0 w-px bg-error/50 z-10 pointer-events-none" style={{ left: `${todayPos}%` }} />
+                          )}
 
-                      {/* Bars */}
-                      {hasPhases ? (
-                        jobPhases.map(phase => {
-                          const pos = barPosition(phase.start_date, phase.end_date, displayCols);
-                          if (!pos) return null;
-                          return (
-                            <GanttBar
-                              key={`phase-${phase.id}`}
-                              barPos={pos}
-                              color={phase.color}
-                              label={phase.name}
-                              startDate={phase.start_date}
-                              endDate={phase.end_date}
-                              isDragging={dragging}
-                              isActiveDrag={activeDragKey === `phase-${phase.id}`}
-                              onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
-                              onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
-                              onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
-                              onDoubleClick={() => onJobClick(job)}
-                            />
-                          );
-                        })
-                      ) : (
-                        (() => {
-                          const pos = barPosition(job.start_date, job.end_date, displayCols);
-                          if (!pos) return null;
-                          return (
-                            <GanttBar
-                              barPos={pos}
-                              color={job.color}
-                              label={job.name}
-                              startDate={job.start_date}
-                              endDate={job.end_date}
-                              statusClasses={!job.color ? colors : undefined}
-                              isDragging={dragging}
-                              isActiveDrag={activeDragKey === `job-${job.id}`}
-                              onMouseDownMove={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'move')}
-                              onMouseDownLeft={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'left')}
-                              onMouseDownRight={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'right')}
-                              onDoubleClick={() => onJobClick(job)}
-                            />
-                          );
-                        })()
-                      )}
-                    </div>
-                  </td>
+                          {/* Bars */}
+                          {hasPhases ? (
+                            (laneInfo?.assignments || jobPhases.map(p => ({ phase: p, lane: 0 }))).map(({ phase, lane }) => {
+                              const pos = barPosition(phase.start_date, phase.end_date, displayCols);
+                              if (!pos) return null;
+                              return (
+                                <GanttBar
+                                  key={`phase-${phase.id}`}
+                                  barPos={pos}
+                                  color={phase.color}
+                                  label={phase.name}
+                                  startDate={phase.start_date}
+                                  endDate={phase.end_date}
+                                  labelPosition={labelPosition}
+                                  lane={lane}
+                                  isDragging={dragging}
+                                  isActiveDrag={activeDragKey === `phase-${phase.id}`}
+                                  onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
+                                  onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
+                                  onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
+                                  onDoubleClick={() => onJobClick(job)}
+                                />
+                              );
+                            })
+                          ) : (
+                            (() => {
+                              const pos = barPosition(job.start_date, job.end_date, displayCols);
+                              if (!pos) return null;
+                              return (
+                                <GanttBar
+                                  barPos={pos}
+                                  color={job.color}
+                                  label={job.name}
+                                  startDate={job.start_date}
+                                  endDate={job.end_date}
+                                  statusClasses={!job.color ? colors : undefined}
+                                  labelPosition={labelPosition}
+                                  lane={0}
+                                  isDragging={dragging}
+                                  isActiveDrag={activeDragKey === `job-${job.id}`}
+                                  onMouseDownMove={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'move')}
+                                  onMouseDownLeft={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'left')}
+                                  onMouseDownRight={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'right')}
+                                  onDoubleClick={() => onJobClick(job)}
+                                />
+                              );
+                            })()
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })()}
                 </tr>
               );
             })}
