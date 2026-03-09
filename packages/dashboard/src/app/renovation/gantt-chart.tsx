@@ -238,10 +238,10 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
             onMouseDown={onMouseDownMove}
             onDoubleClick={onDoubleClick}
           />
-          <div className="absolute left-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-start" onMouseDown={onMouseDownLeft}>
+          <div className="absolute left-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-start" onMouseDown={e => e.metaKey ? onMouseDownMove(e) : onMouseDownLeft(e)}>
             <div className="w-1 h-2.5 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity ml-0.5" />
           </div>
-          <div className="absolute right-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-end" onMouseDown={onMouseDownRight}>
+          <div className="absolute right-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-end" onMouseDown={e => e.metaKey ? onMouseDownMove(e) : onMouseDownRight(e)}>
             <div className="w-1 h-2.5 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity mr-0.5" />
           </div>
         </>
@@ -357,6 +357,17 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   }, [dragging]);
 
   const displayCols = dragging ? frozenCols.current : columns;
+
+  // Keyboard shortcuts: [ zoom out, ] zoom in
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === '[') { const i = ZOOM_LEVELS.indexOf(zoom); if (i > 0) setZoom(ZOOM_LEVELS[i - 1]); }
+      if (e.key === ']') { const i = ZOOM_LEVELS.indexOf(zoom); if (i < ZOOM_LEVELS.length - 1) setZoom(ZOOM_LEVELS[i + 1]); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [zoom]);
 
   const todayColIdx = useMemo(() => {
     const now = Date.now();

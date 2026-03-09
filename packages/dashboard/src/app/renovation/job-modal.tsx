@@ -31,6 +31,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
   // Phases
   const [phases, setPhases] = useState<RenovationPhase[]>([]);
   const hasPhases = phases.length > 0;
+  const [focusNewPhase, setFocusNewPhase] = useState(false);
 
   const fetchPhases = useCallback(async () => {
     if (!job) return;
@@ -49,6 +50,13 @@ export function JobModal({ job, onClose, onDelete }: Props) {
       setEndDate(ends[ends.length - 1]);
     }
   }, [phases, hasPhases]);
+
+  // Reset focus flag after render so PhaseRow sees it first
+  useEffect(() => {
+    if (focusNewPhase) {
+      requestAnimationFrame(() => setFocusNewPhase(false));
+    }
+  }, [focusNewPhase]);
 
   // Workers
   const [workers, setWorkers] = useState<RenovationWorker[]>([]);
@@ -107,8 +115,9 @@ export function JobModal({ job, onClose, onDelete }: Props) {
     await fetch(`/api/renovation/jobs/${job.id}/phases`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'New Phase', start_date: pStart, end_date: pStart, color: color, sort_order: phases.length }),
+      body: JSON.stringify({ name: '', start_date: pStart, end_date: pStart, color: color, sort_order: phases.length }),
     });
+    setFocusNewPhase(true);
     fetchPhases();
   };
 
@@ -195,6 +204,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
                 className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content"
                 placeholder="e.g. Replace bedroom windows"
                 dir="auto"
+                autoFocus
               />
             </div>
             <div className="shrink-0">
@@ -286,6 +296,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
                         ordered.forEach((p, i) => handleUpdatePhase(p.id, { sort_order: i }));
                       }}
                       isDragging={dragPhaseId === phase.id}
+                      autoFocusName={focusNewPhase && idx === phases.length - 1}
                     />
                   ))}
                 </div>
@@ -318,6 +329,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
                       className="input-inset w-full rounded px-2 py-1.5 text-xs font-content"
                       placeholder="Worker name"
                       dir="auto"
+                      autoFocus
                       onKeyDown={e => e.key === 'Enter' && handleAddWorker()}
                     />
                   </div>
@@ -467,7 +479,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
 
 // ── Phase row component ──
 
-function PhaseRow({ phase, onUpdate, onDelete, onDragStart, onDragEnd, onDragOver, onDrop, isDragging }: {
+function PhaseRow({ phase, onUpdate, onDelete, onDragStart, onDragEnd, onDragOver, onDrop, isDragging, autoFocusName }: {
   phase: RenovationPhase;
   onUpdate: (id: number, updates: Partial<RenovationPhase>) => void;
   onDelete: (id: number) => void;
@@ -476,6 +488,7 @@ function PhaseRow({ phase, onUpdate, onDelete, onDragStart, onDragEnd, onDragOve
   onDragOver: (e: React.DragEvent) => void;
   onDrop: () => void;
   isDragging: boolean;
+  autoFocusName?: boolean;
 }) {
   const [name, setName] = useState(phase.name);
   const [startDate, setStartDate] = useState(phase.start_date);
@@ -547,7 +560,9 @@ function PhaseRow({ phase, onUpdate, onDelete, onDragStart, onDragEnd, onDragOve
         onBlur={() => { if (name !== phase.name) onUpdate(phase.id, { name }); }}
         onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
         className="input-inset flex-1 rounded px-2 py-1 text-xs font-content min-w-0"
+        placeholder="Phase name"
         dir="auto"
+        ref={el => { if (autoFocusName && el) el.focus(); }}
       />
 
       {/* Date */}
@@ -555,9 +570,15 @@ function PhaseRow({ phase, onUpdate, onDelete, onDragStart, onDragEnd, onDragOve
         type="date"
         value={startDate}
         onChange={e => {
-          setStartDate(e.target.value);
-          const updates: Partial<RenovationPhase> = { start_date: e.target.value };
-          if (!showEndDate) { setEndDate(e.target.value); updates.end_date = e.target.value; }
+          const newStart = e.target.value;
+          setStartDate(newStart);
+          const updates: Partial<RenovationPhase> = { start_date: newStart };
+          if (!showEndDate) {
+            setEndDate(newStart); updates.end_date = newStart;
+          } else if (newStart >= endDate) {
+            const next = addDaysStr(newStart, 1);
+            setEndDate(next); updates.end_date = next;
+          }
           onUpdate(phase.id, updates);
         }}
         className="input-inset rounded px-2 py-1 text-xs font-content w-[130px] shrink-0"

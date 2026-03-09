@@ -110,9 +110,10 @@ renovation.get('/renovation/phases', (c) => {
 renovation.post('/renovation/jobs/:id/phases', async (c) => {
   const jobId = Number(c.req.param('id'));
   const body = await c.req.json();
-  if (!body.name || !body.start_date || !body.end_date) {
-    return c.json({ error: 'name, start_date, and end_date are required' }, 400);
+  if (!body.start_date || !body.end_date) {
+    return c.json({ error: 'start_date and end_date are required' }, 400);
   }
+  if (body.name === undefined) body.name = '';
   const phase = createRenovationPhase({ ...body, job_id: jobId });
   return c.json(phase, 201);
 });
