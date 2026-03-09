@@ -3,12 +3,15 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import type { RenovationJob, RenovationPhase } from './page';
 
+type ZoomLevel = 'month' | 'week' | '3day' | 'day';
+const ZOOM_LEVELS: ZoomLevel[] = ['month', 'week', '3day', 'day'];
+
 interface Props {
   jobs: RenovationJob[];
   phases: RenovationPhase[];
-  view: 'week' | 'month';
   projectStart: string | null;
   projectEnd: string | null;
+  hidePrices: boolean;
   onJobClick: (job: RenovationJob) => void;
   onJobDatesChange: (id: number, start: string, end: string) => void;
   onPhaseDatesChange: (phaseId: number, start: string, end: string) => void;
@@ -37,6 +40,11 @@ function fmtDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function fmtShort(s: string): string {
+  const [, m, d] = s.split('-').map(Number);
+  return `${d} ${MONTH_NAMES[m - 1]}`;
+}
+
 function parseDate(s: string): Date {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -48,6 +56,7 @@ function daysBetween(a: string, b: string): number {
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function deriveStatus(job: RenovationJob): string {
   if (!job.max_worker_stage) return 'new';
@@ -65,12 +74,11 @@ const BAR_COLORS: Record<string, { bg: string; border: string }> = {
 
 // ── column building ──
 
-interface Column { label: string; sublabel?: string; start: Date; end: Date }
+interface Column { label: string; sublabel?: string; start: Date; end: Date; isWeekend?: boolean }
 interface MonthSpan { label: string; colSpan: number }
 
 function computeRange(jobs: RenovationJob[], projectStart: string | null, projectEnd: string | null): [Date, Date] {
   const now = new Date();
-
   if (projectStart && projectEnd) return [parseDate(projectStart), parseDate(projectEnd)];
 
   const jobDates = jobs.flatMap(j => [parseDate(j.start_date), parseDate(j.end_date)]);
@@ -92,22 +100,51 @@ function computeRange(jobs: RenovationJob[], projectStart: string | null, projec
   return [lo, hi];
 }
 
-function buildColumns(view: 'week' | 'month', rangeStart: Date, rangeEnd: Date): Column[] {
+function buildColumns(zoom: ZoomLevel, rangeStart: Date, rangeEnd: Date): Column[] {
   const cols: Column[] = [];
-  if (view === 'month') {
+
+  if (zoom === 'month') {
     let cur = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
     while (cur <= rangeEnd) {
       const end = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
       cols.push({ label: MONTH_NAMES[cur.getMonth()], sublabel: String(cur.getFullYear()), start: new Date(cur), end });
       cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
     }
-  } else {
+  } else if (zoom === 'week') {
     let cur = startOfWeek(rangeStart);
     const stop = addDays(rangeEnd, 7);
     while (cur <= stop) {
       const end = addDays(cur, 6);
       cols.push({ label: `${cur.getDate()}`, sublabel: `${cur.getDate()}–${end.getDate()}`, start: new Date(cur), end });
       cur = addDays(cur, 7);
+    }
+  } else if (zoom === '3day') {
+    let cur = new Date(rangeStart);
+    const stop = addDays(rangeEnd, 3);
+    while (cur <= stop) {
+      const end = addDays(cur, 2);
+      cols.push({
+        label: `${cur.getDate()}`,
+        sublabel: `${MONTH_NAMES[cur.getMonth()]} ${cur.getDate()}–${end.getDate()}`,
+        start: new Date(cur),
+        end,
+      });
+      cur = addDays(cur, 3);
+    }
+  } else {
+    // day
+    let cur = new Date(rangeStart);
+    const stop = addDays(rangeEnd, 1);
+    while (cur <= stop) {
+      const dow = cur.getDay();
+      cols.push({
+        label: `${cur.getDate()}`,
+        sublabel: DAY_NAMES[dow],
+        start: new Date(cur),
+        end: new Date(cur),
+        isWeekend: dow === 0 || dow === 6,
+      });
+      cur = addDays(cur, 1);
     }
   }
   return cols;
@@ -133,7 +170,6 @@ function barPosition(start: string, end: string, columns: Column[]): { left: num
   const e = Math.min(parseDate(end).getTime(), t1);
   if (s > e) return null;
   const isSingleDay = start === end;
-  // Single-day events get a minimum visual width
   const rawWidth = ((e - s) / span) * 100;
   return { left: ((s - t0) / span) * 100, width: Math.max(rawWidth, 0.3), isSingleDay };
 }
@@ -147,7 +183,17 @@ function todayPosition(columns: Column[]): number | null {
   return ((now - t0) / (t1 - t0)) * 100;
 }
 
-// ── Bar component (shared between job bars and phase bars) ──
+// Column width based on zoom level
+function colMinWidth(zoom: ZoomLevel): number {
+  switch (zoom) {
+    case 'day': return 40;
+    case '3day': return 60;
+    case 'week': return 80;
+    case 'month': return 100;
+  }
+}
+
+// ── Bar component ──
 
 interface BarProps {
   barPos: { left: number; width: number; isSingleDay: boolean };
@@ -157,13 +203,14 @@ interface BarProps {
   endDate: string;
   statusClasses?: { bg: string; border: string };
   isDragging: boolean;
+  isActiveDrag: boolean;
   onMouseDownMove: (e: React.MouseEvent) => void;
   onMouseDownLeft: (e: React.MouseEvent) => void;
   onMouseDownRight: (e: React.MouseEvent) => void;
   onDoubleClick: () => void;
 }
 
-function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
+function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
   const [hover, setHover] = useState(false);
   const useCustomColor = !!color;
   const days = daysBetween(startDate, endDate);
@@ -176,15 +223,10 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* Bar body */}
       {isSingleDay ? (
-        /* Diamond marker for single-day events */
         <div
           className="w-3 h-3 rotate-45 rounded-sm border border-black/10 mx-auto"
-          style={{
-            cursor: isDragging ? 'grabbing' : 'grab',
-            backgroundColor: color || '#9ca3af',
-          }}
+          style={{ cursor: isDragging ? 'grabbing' : 'grab', backgroundColor: color || '#9ca3af' }}
           onMouseDown={onMouseDownMove}
           onDoubleClick={onDoubleClick}
         />
@@ -192,25 +234,14 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
         <>
           <div
             className={`h-[18px] rounded-md overflow-hidden ${useCustomColor ? 'border border-black/10' : `${statusClasses?.bg || 'bg-gray-400/90'} border ${statusClasses?.border || 'border-gray-500'}`}`}
-            style={{
-              cursor: isDragging ? 'grabbing' : 'grab',
-              ...(useCustomColor ? { backgroundColor: color } : {}),
-            }}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab', ...(useCustomColor ? { backgroundColor: color } : {}) }}
             onMouseDown={onMouseDownMove}
             onDoubleClick={onDoubleClick}
           />
-          {/* Left handle */}
-          <div
-            className="absolute left-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-start"
-            onMouseDown={onMouseDownLeft}
-          >
+          <div className="absolute left-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-start" onMouseDown={onMouseDownLeft}>
             <div className="w-1 h-2.5 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity ml-0.5" />
           </div>
-          {/* Right handle */}
-          <div
-            className="absolute right-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-end"
-            onMouseDown={onMouseDownRight}
-          >
+          <div className="absolute right-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-end" onMouseDown={onMouseDownRight}>
             <div className="w-1 h-2.5 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity mr-0.5" />
           </div>
         </>
@@ -225,7 +256,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
       </div>
 
       {/* Tooltip on hover */}
-      {hover && !isDragging && (
+      {(hover || isActiveDrag) && (
         <div className="absolute z-50 pointer-events-none bg-surface-secondary border border-border rounded-lg shadow-lg px-3 py-2 text-xs whitespace-nowrap"
           style={{ left: 0, bottom: '100%', marginBottom: 4 }}
         >
@@ -234,7 +265,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
             <span className="font-semibold text-fg font-content" dir="auto">{label}</span>
           </div>
           <div className="text-fg-muted font-content">
-            {startDate}{startDate !== endDate && ` → ${endDate}`} · {days === 0 ? '1 day' : `${days} day${days !== 1 ? 's' : ''}`}
+            {fmtShort(startDate)}{startDate !== endDate && ` → ${fmtShort(endDate)}`} · {days === 0 ? '1 day' : `${days} day${days !== 1 ? 's' : ''}`}
           </div>
         </div>
       )}
@@ -244,12 +275,17 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
 
 // ── component ──
 
-export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob }: Props) {
-  const range = useMemo(() => computeRange(jobs, projectStart, projectEnd), [jobs, projectStart, projectEnd]);
-  const columns = useMemo(() => buildColumns(view, range[0], range[1]), [view, range]);
-  const monthSpans = useMemo(() => view === 'week' ? buildMonthSpans(columns) : [], [view, columns]);
+export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob }: Props) {
+  const [zoom, setZoom] = useState<ZoomLevel>('week');
+  const zoomIdx = ZOOM_LEVELS.indexOf(zoom);
+  const canZoomIn = zoomIdx < ZOOM_LEVELS.length - 1;
+  const canZoomOut = zoomIdx > 0;
 
-  // Index phases by job_id
+  const range = useMemo(() => computeRange(jobs, projectStart, projectEnd), [jobs, projectStart, projectEnd]);
+  const columns = useMemo(() => buildColumns(zoom, range[0], range[1]), [zoom, range]);
+  const showMonthStrip = zoom !== 'month';
+  const monthSpans = useMemo(() => showMonthStrip ? buildMonthSpans(columns) : [], [showMonthStrip, columns]);
+
   const phasesByJob = useMemo(() => {
     const map = new Map<number, RenovationPhase[]>();
     for (const p of phases) {
@@ -280,6 +316,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
     pxPerMs: number;
   } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
 
   const onMouseDown = useCallback((e: React.MouseEvent, type: 'job' | 'phase', id: number, startDate: string, endDate: string, edge: 'left' | 'right' | 'move') => {
     e.stopPropagation();
@@ -291,60 +328,63 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
     const t0 = columns[0].start.getTime();
     const t1 = columns[columns.length - 1].end.getTime();
 
-    dragInfo.current = {
-      type,
-      id,
-      edge,
-      startX: e.clientX,
-      origStart: startDate,
-      origEnd: endDate,
-      pxPerMs: px / (t1 - t0),
-    };
+    dragInfo.current = { type, id, edge, startX: e.clientX, origStart: startDate, origEnd: endDate, pxPerMs: px / (t1 - t0) };
+    setActiveDragKey(`${type}-${id}`);
     setDragging(true);
   }, [columns]);
 
   useEffect(() => {
     if (!dragging) return;
-
     const onMove = (e: MouseEvent) => {
       const d = dragInfo.current;
       if (!d) return;
       const dxMs = (e.clientX - d.startX) / d.pxPerMs;
       const daysDelta = Math.round(dxMs / 86400000);
       if (daysDelta === 0) return;
-
       const s0 = parseDate(d.origStart);
       const e0 = parseDate(d.origEnd);
       let ns: Date, ne: Date;
-
-      if (d.edge === 'left') {
-        ns = addDays(s0, daysDelta);
-        ne = e0;
-        if (ns >= ne) ns = addDays(ne, -1);
-      } else if (d.edge === 'right') {
-        ns = s0;
-        ne = addDays(e0, daysDelta);
-        if (ne <= ns) ne = addDays(ns, 1);
-      } else {
-        ns = addDays(s0, daysDelta);
-        ne = addDays(e0, daysDelta);
-      }
-
-      if (d.type === 'job') {
-        jobCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
-      } else {
-        phaseCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
-      }
+      if (d.edge === 'left') { ns = addDays(s0, daysDelta); ne = e0; if (ns > ne) ns = ne; }
+      else if (d.edge === 'right') { ns = s0; ne = addDays(e0, daysDelta); if (ne < ns) ne = ns; }
+      else { ns = addDays(s0, daysDelta); ne = addDays(e0, daysDelta); }
+      if (d.type === 'job') jobCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
+      else phaseCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
     };
-
-    const onUp = () => { dragInfo.current = null; setDragging(false); };
-
+    const onUp = () => { dragInfo.current = null; setDragging(false); setActiveDragKey(null); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
   }, [dragging]);
 
   const displayCols = dragging ? frozenCols.current : columns;
+
+  // ── pan drag (on empty timeline areas) ──
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const panInfo = useRef<{ startX: number; scrollLeft: number } | null>(null);
+  const [panning, setPanning] = useState(false);
+
+  const onPanStart = useCallback((e: React.MouseEvent) => {
+    // Only start pan if clicking on the timeline background (not on a bar)
+    if ((e.target as HTMLElement).closest('.group\\/bar')) return;
+    if (!scrollRef.current) return;
+    e.preventDefault();
+    panInfo.current = { startX: e.clientX, scrollLeft: scrollRef.current.scrollLeft };
+    setPanning(true);
+  }, []);
+
+  useEffect(() => {
+    if (!panning) return;
+    const onMove = (e: MouseEvent) => {
+      const p = panInfo.current;
+      if (!p || !scrollRef.current) return;
+      const dx = e.clientX - p.startX;
+      scrollRef.current.scrollLeft = p.scrollLeft - dx;
+    };
+    const onUp = () => { panInfo.current = null; setPanning(false); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+  }, [panning]);
 
   // ── row reorder (HTML5 DnD) ──
   const [dragRowId, setDragRowId] = useState<number | null>(null);
@@ -370,31 +410,58 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
     const sourceId = dragRowId;
     setDragRowId(null);
     if (sourceId === null || sourceId === targetJobId) return;
-
     const ids = jobs.map(j => j.id);
     const fromIdx = ids.indexOf(sourceId);
     const toIdx = ids.indexOf(targetJobId);
     if (fromIdx === -1 || toIdx === -1) return;
-
     ids.splice(fromIdx, 1);
     ids.splice(toIdx, 0, sourceId);
     reorderCbRef.current(ids);
   }, [dragRowId, jobs]);
 
+  const minColW = colMinWidth(zoom);
+
   return (
     <div className="card-raised rounded-xl overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+      {/* Zoom controls */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-hover/20">
+        <span className="text-xs text-fg-muted uppercase tracking-wider font-semibold">{zoom === '3day' ? '3-Day' : zoom}</span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => canZoomOut && setZoom(ZOOM_LEVELS[zoomIdx - 1])}
+            disabled={!canZoomOut}
+            className="btn-raised rounded-md w-7 h-7 flex items-center justify-center text-fg-secondary disabled:opacity-30 text-sm font-bold"
+            title="Zoom out"
+          >
+            −
+          </button>
+          <button
+            onClick={() => canZoomIn && setZoom(ZOOM_LEVELS[zoomIdx + 1])}
+            disabled={!canZoomIn}
+            className="btn-raised rounded-md w-7 h-7 flex items-center justify-center text-fg-secondary disabled:opacity-30 text-sm font-bold"
+            title="Zoom in"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto"
+        style={{ cursor: panning ? 'grabbing' : undefined }}
+      >
+        <table className="w-full border-collapse" style={{ tableLayout: 'fixed', minWidth: displayCols.length * minColW + 260 }}>
           <colgroup>
             <col style={{ width: 260 }} />
-            {displayCols.map((_, i) => <col key={i} />)}
+            {displayCols.map((_, i) => <col key={i} style={{ minWidth: minColW }} />)}
           </colgroup>
 
           <thead>
-            {/* Month strip — week view */}
-            {view === 'week' && monthSpans.length > 0 && (
+            {/* Month strip */}
+            {showMonthStrip && monthSpans.length > 0 && (
               <tr className="border-b border-border-subtle">
-                <th />
+                <th className="sticky left-0 z-20 bg-surface" />
                 {monthSpans.map((span, i) => (
                   <th
                     key={i}
@@ -409,11 +476,11 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
 
             {/* Column headers */}
             <tr className="border-b border-border">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
+              <th className="sticky left-0 z-20 bg-surface text-left px-4 py-3 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
                 Task
               </th>
               {displayCols.map((col, i) => (
-                <th key={i} className="text-center px-1 py-2 text-xs border-l border-border-subtle font-normal">
+                <th key={i} className={`text-center px-1 py-2 text-xs border-l border-border-subtle font-normal ${col.isWeekend ? 'bg-surface-hover/40' : ''}`}>
                   <div className="font-semibold text-fg-secondary">{col.label}</div>
                   {col.sublabel && <div className="text-fg-muted text-[10px]">{col.sublabel}</div>}
                 </th>
@@ -437,9 +504,8 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
                   onDrop={e => onRowDrop(e, job.id)}
                 >
                   {/* Left info */}
-                  <td className="px-4 py-3 align-middle">
+                  <td className="sticky left-0 z-10 bg-surface px-4 py-3 align-middle">
                     <div className="group/row flex items-center gap-2">
-                      {/* Drag handle */}
                       <div
                         draggable
                         onDragStart={e => onRowDragStart(e, job.id)}
@@ -462,7 +528,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5 text-xs text-fg-muted">
                           {job.accepted_worker_name && <span className="text-accent" dir="auto">{job.accepted_worker_name}</span>}
-                          {job.accepted_worker_price != null && (
+                          {!hidePrices && job.accepted_worker_price != null && (
                             <>
                               {job.accepted_worker_name && <span>·</span>}
                               <span>{'\u20AA'}{job.accepted_worker_price.toLocaleString()}</span>
@@ -483,12 +549,17 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
                   </td>
 
                   {/* Timeline */}
-                  <td colSpan={totalCols} className="relative p-0" style={{ height: 56 }}>
+                  <td
+                    colSpan={totalCols}
+                    className="relative p-0 overflow-hidden"
+                    style={{ height: 56 }}
+                    onMouseDown={onPanStart}
+                  >
                     <div ref={timelineRef} className="absolute inset-0">
                       {/* Grid lines */}
                       <div className="absolute inset-0 flex pointer-events-none">
-                        {displayCols.map((_, i) => (
-                          <div key={i} className="flex-1 border-l border-border-subtle" />
+                        {displayCols.map((col, i) => (
+                          <div key={i} className={`flex-1 border-l border-border-subtle ${col.isWeekend ? 'bg-surface-hover/30' : ''}`} />
                         ))}
                       </div>
 
@@ -497,7 +568,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
                         <div className="absolute top-0 bottom-0 w-px bg-error/50 z-10 pointer-events-none" style={{ left: `${todayPos}%` }} />
                       )}
 
-                      {/* Bars: either phases or single job bar */}
+                      {/* Bars */}
                       {hasPhases ? (
                         jobPhases.map(phase => {
                           const pos = barPosition(phase.start_date, phase.end_date, displayCols);
@@ -511,6 +582,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
                               startDate={phase.start_date}
                               endDate={phase.end_date}
                               isDragging={dragging}
+                              isActiveDrag={activeDragKey === `phase-${phase.id}`}
                               onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
                               onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
                               onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
@@ -531,6 +603,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
                               endDate={job.end_date}
                               statusClasses={!job.color ? colors : undefined}
                               isDragging={dragging}
+                              isActiveDrag={activeDragKey === `job-${job.id}`}
                               onMouseDownMove={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'move')}
                               onMouseDownLeft={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'left')}
                               onMouseDownRight={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'right')}
@@ -547,7 +620,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
 
             {/* Add Job row */}
             <tr>
-              <td className="px-4 py-3" colSpan={displayCols.length + 1}>
+              <td className="sticky left-0 z-10 bg-surface px-4 py-3">
                 <button
                   onClick={onAddJob}
                   className="text-sm text-fg-muted hover:text-accent transition-colors font-medium"
@@ -555,6 +628,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
                   + Add Job
                 </button>
               </td>
+              <td colSpan={displayCols.length} />
             </tr>
           </tbody>
         </table>

@@ -134,7 +134,7 @@ renovation.delete('/renovation/phases/:id', (c) => {
 
 // Project settings (stored in integrations table as type 'renovation_settings')
 const SETTINGS_TYPE = 'renovation_settings';
-const DEFAULT_SETTINGS = { project_start: null, project_end: null, project_name: null };
+const DEFAULT_SETTINGS = { project_start: null, project_end: null, project_name: null, hide_prices: false };
 
 renovation.get('/renovation/settings', (c) => {
   const row = getIntegration(SETTINGS_TYPE);
@@ -152,6 +152,7 @@ renovation.put('/renovation/settings', async (c) => {
     project_start: body.project_start ?? null,
     project_end: body.project_end ?? null,
     project_name: body.project_name ?? null,
+    hide_prices: body.hide_prices ?? false,
   };
   saveIntegration(SETTINGS_TYPE, JSON.stringify(settings));
   return c.json(settings);

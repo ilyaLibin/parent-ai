@@ -50,6 +50,7 @@ export interface RenovationSettings {
   project_start: string | null;
   project_end: string | null;
   project_name: string | null;
+  hide_prices: boolean;
 }
 
 async function getJobs(): Promise<RenovationJob[]> {
@@ -66,7 +67,7 @@ async function getPhases(): Promise<RenovationPhase[]> {
 
 async function getSettings(): Promise<RenovationSettings> {
   const res = await fetch(`${API_URL}/renovation/settings`, { cache: 'no-store' });
-  if (!res.ok) return { project_start: null, project_end: null, project_name: null };
+  if (!res.ok) return { project_start: null, project_end: null, project_name: null, hide_prices: false };
   return res.json();
 }
 

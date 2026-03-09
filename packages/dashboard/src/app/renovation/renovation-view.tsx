@@ -21,7 +21,6 @@ interface Props {
 export function RenovationView({ initialJobs, initialPhases, initialSettings }: Props) {
   const [jobs, setJobs] = useState(initialJobs);
   const [phases, setPhases] = useState(initialPhases);
-  const [view, setView] = useState<'week' | 'month'>('week');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<RenovationJob | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -165,6 +164,15 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
               />
             </div>
           </div>
+          <label className="flex items-center gap-2 text-xs text-fg-secondary cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={settingsForm.hide_prices}
+              onChange={e => setSettingsForm(s => ({ ...s, hide_prices: e.target.checked }))}
+              className="rounded"
+            />
+            Hide prices
+          </label>
           <div className="flex justify-end gap-2 pt-1">
             <button onClick={() => setShowSettings(false)} className="btn-raised rounded-lg px-3 py-1.5 text-xs">
               Cancel
@@ -185,38 +193,22 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
         <StatCard label="Total Jobs" value={totalTasks} />
         <StatCard label="Assigned" value={assigned} accent="text-emerald-500" />
         <StatCard label="Searching" value={searching} accent="text-blue-400" />
-        <StatCard
-          label="Total Budget"
-          value={`\u20AA${totalBudget.toLocaleString()}`}
-          accent="text-accent"
-        />
-      </div>
-
-      {/* View Toggle */}
-      <div className="max-w-[1400px]">
-        <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
-          <button
-            onClick={() => setView('week')}
-            className={`px-4 py-1.5 transition-colors ${view === 'week' ? 'bg-accent text-white font-medium' : 'bg-surface-secondary text-fg-secondary hover:bg-surface-hover'}`}
-          >
-            Week
-          </button>
-          <button
-            onClick={() => setView('month')}
-            className={`px-4 py-1.5 transition-colors ${view === 'month' ? 'bg-accent text-white font-medium' : 'bg-surface-secondary text-fg-secondary hover:bg-surface-hover'}`}
-          >
-            Month
-          </button>
-        </div>
+        {!settings.hide_prices && (
+          <StatCard
+            label="Total Budget"
+            value={`\u20AA${totalBudget.toLocaleString()}`}
+            accent="text-accent"
+          />
+        )}
       </div>
 
       {/* Gantt — full width */}
       <GanttChart
         jobs={jobs}
         phases={phases}
-        view={view}
         projectStart={settings.project_start}
         projectEnd={settings.project_end}
+        hidePrices={settings.hide_prices}
         onJobClick={handleOpenEdit}
         onJobDatesChange={handleJobDatesChange}
         onPhaseDatesChange={handlePhaseDatesChange}
