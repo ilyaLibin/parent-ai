@@ -9,6 +9,11 @@ import {
   createRenovationWorker,
   updateRenovationWorker,
   deleteRenovationWorker,
+  getRenovationPhases,
+  getAllRenovationPhases,
+  createRenovationPhase,
+  updateRenovationPhase,
+  deleteRenovationPhase,
   getIntegration,
   saveIntegration,
 } from '@parent-ai/shared';
@@ -78,6 +83,41 @@ renovation.put('/renovation/workers/:id', async (c) => {
 renovation.delete('/renovation/workers/:id', (c) => {
   const id = Number(c.req.param('id'));
   const deleted = deleteRenovationWorker(id);
+  if (!deleted) return c.json({ error: 'Not found' }, 404);
+  return c.json({ ok: true });
+});
+
+// Phases
+renovation.get('/renovation/jobs/:id/phases', (c) => {
+  const jobId = Number(c.req.param('id'));
+  return c.json(getRenovationPhases(jobId));
+});
+
+renovation.get('/renovation/phases', (c) => {
+  return c.json(getAllRenovationPhases());
+});
+
+renovation.post('/renovation/jobs/:id/phases', async (c) => {
+  const jobId = Number(c.req.param('id'));
+  const body = await c.req.json();
+  if (!body.name || !body.start_date || !body.end_date) {
+    return c.json({ error: 'name, start_date, and end_date are required' }, 400);
+  }
+  const phase = createRenovationPhase({ ...body, job_id: jobId });
+  return c.json(phase, 201);
+});
+
+renovation.put('/renovation/phases/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  const body = await c.req.json();
+  const phase = updateRenovationPhase(id, body);
+  if (!phase) return c.json({ error: 'Not found' }, 404);
+  return c.json(phase);
+});
+
+renovation.delete('/renovation/phases/:id', (c) => {
+  const id = Number(c.req.param('id'));
+  const deleted = deleteRenovationPhase(id);
   if (!deleted) return c.json({ error: 'Not found' }, 404);
   return c.json({ ok: true });
 });

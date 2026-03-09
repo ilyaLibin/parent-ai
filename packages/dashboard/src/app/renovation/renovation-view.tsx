@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import type { RenovationJob, RenovationSettings } from './page';
+import type { RenovationJob, RenovationPhase, RenovationSettings } from './page';
 import { GanttChart } from './gantt-chart';
 import { JobModal } from './job-modal';
 
@@ -21,11 +21,13 @@ function deriveStatus(job: RenovationJob): string {
 
 interface Props {
   initialJobs: RenovationJob[];
+  initialPhases: RenovationPhase[];
   initialSettings: RenovationSettings;
 }
 
-export function RenovationView({ initialJobs, initialSettings }: Props) {
+export function RenovationView({ initialJobs, initialPhases, initialSettings }: Props) {
   const [jobs, setJobs] = useState(initialJobs);
+  const [phases, setPhases] = useState(initialPhases);
   const [view, setView] = useState<'week' | 'month'>('week');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<RenovationJob | null>(null);
@@ -34,9 +36,13 @@ export function RenovationView({ initialJobs, initialSettings }: Props) {
   const [settingsForm, setSettingsForm] = useState(initialSettings);
   const [savingSettings, setSavingSettings] = useState(false);
 
-  const refreshJobs = useCallback(async () => {
-    const res = await fetch('/api/renovation/jobs');
-    if (res.ok) setJobs(await res.json());
+  const refresh = useCallback(async () => {
+    const [jobsRes, phasesRes] = await Promise.all([
+      fetch('/api/renovation/jobs'),
+      fetch('/api/renovation/phases'),
+    ]);
+    if (jobsRes.ok) setJobs(await jobsRes.json());
+    if (phasesRes.ok) setPhases(await phasesRes.json());
   }, []);
 
   const handleOpenNew = () => { setEditingJob(null); setModalOpen(true); };
@@ -51,13 +57,25 @@ export function RenovationView({ initialJobs, initialSettings }: Props) {
     });
   };
 
-  const handleClose = () => { setModalOpen(false); setEditingJob(null); refreshJobs(); };
+  const handlePhaseDatesChange = async (phaseId: number, start_date: string, end_date: string) => {
+    setPhases(prev => prev.map(p => p.id === phaseId ? { ...p, start_date, end_date } : p));
+    await fetch(`/api/renovation/phases/${phaseId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_date, end_date }),
+    });
+    // Recalc job dates from server
+    const jobsRes = await fetch('/api/renovation/jobs');
+    if (jobsRes.ok) setJobs(await jobsRes.json());
+  };
+
+  const handleClose = () => { setModalOpen(false); setEditingJob(null); refresh(); };
 
   const handleDelete = async (id: number) => {
     await fetch(`/api/renovation/jobs/${id}`, { method: 'DELETE' });
     setModalOpen(false);
     setEditingJob(null);
-    refreshJobs();
+    refresh();
   };
 
   const handleSaveSettings = async () => {
@@ -205,11 +223,13 @@ export function RenovationView({ initialJobs, initialSettings }: Props) {
       {/* Gantt — full width */}
       <GanttChart
         jobs={jobs}
+        phases={phases}
         view={view}
         projectStart={settings.project_start}
         projectEnd={settings.project_end}
         onJobClick={handleOpenEdit}
         onJobDatesChange={handleJobDatesChange}
+        onPhaseDatesChange={handlePhaseDatesChange}
         onAddJob={handleOpenNew}
       />
 

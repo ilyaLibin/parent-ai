@@ -146,6 +146,20 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_renovation_workers_job ON renovation_workers(job_id);
 
+  CREATE TABLE IF NOT EXISTS renovation_phases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#4f46e5',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (job_id) REFERENCES renovation_jobs(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_renovation_phases_job ON renovation_phases(job_id);
+
   CREATE TABLE IF NOT EXISTS integration_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     integration_type TEXT NOT NULL UNIQUE,
@@ -1020,6 +1034,69 @@ export function updateRenovationWorker(id: number, updates: Partial<{ name: stri
 
 export function deleteRenovationWorker(id: number): boolean {
   return db.prepare('DELETE FROM renovation_workers WHERE id = ?').run(id).changes > 0;
+}
+
+// Renovation phases
+export interface RenovationPhase {
+  id: number;
+  job_id: number;
+  name: string;
+  start_date: string;
+  end_date: string;
+  color: string;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export function getRenovationPhases(jobId: number): RenovationPhase[] {
+  return db.prepare('SELECT * FROM renovation_phases WHERE job_id = ? ORDER BY sort_order ASC, start_date ASC').all(jobId) as RenovationPhase[];
+}
+
+export function getAllRenovationPhases(): RenovationPhase[] {
+  return db.prepare('SELECT * FROM renovation_phases ORDER BY sort_order ASC, start_date ASC').all() as RenovationPhase[];
+}
+
+export function createRenovationPhase(phase: { job_id: number; name: string; start_date: string; end_date: string; color?: string; sort_order?: number }): RenovationPhase {
+  const now = Date.now();
+  const result = db.prepare(
+    'INSERT INTO renovation_phases (job_id, name, start_date, end_date, color, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(phase.job_id, phase.name, phase.start_date, phase.end_date, phase.color ?? '#4f46e5', phase.sort_order ?? 0, now, now);
+  recalcJobDatesFromPhases(phase.job_id);
+  return db.prepare('SELECT * FROM renovation_phases WHERE id = ?').get(result.lastInsertRowid) as RenovationPhase;
+}
+
+export function updateRenovationPhase(id: number, updates: Partial<{ name: string; start_date: string; end_date: string; color: string; sort_order: number }>): RenovationPhase | undefined {
+  const phase = db.prepare('SELECT * FROM renovation_phases WHERE id = ?').get(id) as RenovationPhase | undefined;
+  if (!phase) return undefined;
+  const fields: string[] = [];
+  const values: (string | number)[] = [];
+  for (const [key, val] of Object.entries(updates)) {
+    if (val !== undefined) { fields.push(`${key} = ?`); values.push(val); }
+  }
+  if (fields.length === 0) return phase;
+  fields.push('updated_at = ?');
+  values.push(Date.now());
+  values.push(id);
+  db.prepare(`UPDATE renovation_phases SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  recalcJobDatesFromPhases(phase.job_id);
+  return db.prepare('SELECT * FROM renovation_phases WHERE id = ?').get(id) as RenovationPhase;
+}
+
+export function deleteRenovationPhase(id: number): boolean {
+  const phase = db.prepare('SELECT job_id FROM renovation_phases WHERE id = ?').get(id) as { job_id: number } | undefined;
+  const deleted = db.prepare('DELETE FROM renovation_phases WHERE id = ?').run(id).changes > 0;
+  if (deleted && phase) recalcJobDatesFromPhases(phase.job_id);
+  return deleted;
+}
+
+function recalcJobDatesFromPhases(jobId: number): void {
+  const phases = db.prepare('SELECT start_date, end_date FROM renovation_phases WHERE job_id = ?').all(jobId) as { start_date: string; end_date: string }[];
+  if (phases.length === 0) return; // no phases — keep job dates as-is
+  const starts = phases.map(p => p.start_date).sort();
+  const ends = phases.map(p => p.end_date).sort();
+  db.prepare('UPDATE renovation_jobs SET start_date = ?, end_date = ?, updated_at = ? WHERE id = ?')
+    .run(starts[0], ends[ends.length - 1], Date.now(), jobId);
 }
 
 export { db };

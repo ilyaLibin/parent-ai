@@ -33,6 +33,18 @@ export interface RenovationWorker {
   updated_at: number;
 }
 
+export interface RenovationPhase {
+  id: number;
+  job_id: number;
+  name: string;
+  start_date: string;
+  end_date: string;
+  color: string;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface RenovationSettings {
   project_start: string | null;
   project_end: string | null;
@@ -45,6 +57,12 @@ async function getJobs(): Promise<RenovationJob[]> {
   return res.json();
 }
 
+async function getPhases(): Promise<RenovationPhase[]> {
+  const res = await fetch(`${API_URL}/renovation/phases`, { cache: 'no-store' });
+  if (!res.ok) return [];
+  return res.json();
+}
+
 async function getSettings(): Promise<RenovationSettings> {
   const res = await fetch(`${API_URL}/renovation/settings`, { cache: 'no-store' });
   if (!res.ok) return { project_start: null, project_end: null, project_name: null };
@@ -52,6 +70,6 @@ async function getSettings(): Promise<RenovationSettings> {
 }
 
 export default async function RenovationPage() {
-  const [jobs, settings] = await Promise.all([getJobs(), getSettings()]);
-  return <RenovationView initialJobs={jobs} initialSettings={settings} />;
+  const [jobs, phases, settings] = await Promise.all([getJobs(), getPhases(), getSettings()]);
+  return <RenovationView initialJobs={jobs} initialPhases={phases} initialSettings={settings} />;
 }

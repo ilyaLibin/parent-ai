@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { RenovationJob, RenovationWorker } from './page';
+import type { RenovationJob, RenovationWorker, RenovationPhase } from './page';
 
 const STAGES = ['contact', 'contacted', 'offer', 'accepted'] as const;
 const STAGE_LABELS: Record<string, string> = {
@@ -27,6 +27,28 @@ export function JobModal({ job, onClose, onDelete }: Props) {
   const [color, setColor] = useState(job?.color ?? '#4f46e5');
   const [notes, setNotes] = useState(job?.notes ?? '');
   const [saving, setSaving] = useState(false);
+
+  // Phases
+  const [phases, setPhases] = useState<RenovationPhase[]>([]);
+  const hasPhases = phases.length > 0;
+
+  const fetchPhases = useCallback(async () => {
+    if (!job) return;
+    const res = await fetch(`/api/renovation/jobs/${job.id}/phases`);
+    if (res.ok) setPhases(await res.json());
+  }, [job]);
+
+  useEffect(() => { fetchPhases(); }, [fetchPhases]);
+
+  // Update local dates when phases change (auto-computed)
+  useEffect(() => {
+    if (hasPhases) {
+      const starts = phases.map(p => p.start_date).sort();
+      const ends = phases.map(p => p.end_date).sort();
+      setStartDate(starts[0]);
+      setEndDate(ends[ends.length - 1]);
+    }
+  }, [phases, hasPhases]);
 
   // Workers
   const [workers, setWorkers] = useState<RenovationWorker[]>([]);
@@ -69,6 +91,42 @@ export function JobModal({ job, onClose, onDelete }: Props) {
       setSaving(false);
     }
   };
+
+  // ── Phase handlers ──
+
+  const handleAddPhase = async () => {
+    if (!job) return;
+    // Default: use job dates for first phase, or last phase end → +14 days
+    let pStart = startDate;
+    let pEnd = endDate;
+    if (phases.length > 0) {
+      const lastEnd = phases.map(p => p.end_date).sort().pop()!;
+      pStart = lastEnd;
+      pEnd = addDaysStr(lastEnd, 14);
+    }
+    await fetch(`/api/renovation/jobs/${job.id}/phases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Phase', start_date: pStart, end_date: pEnd, color: color, sort_order: phases.length }),
+    });
+    fetchPhases();
+  };
+
+  const handleUpdatePhase = async (phaseId: number, updates: Partial<RenovationPhase>) => {
+    await fetch(`/api/renovation/phases/${phaseId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    fetchPhases();
+  };
+
+  const handleDeletePhase = async (phaseId: number) => {
+    await fetch(`/api/renovation/phases/${phaseId}`, { method: 'DELETE' });
+    fetchPhases();
+  };
+
+  // ── Worker handlers ──
 
   const handleAddWorker = async () => {
     if (!newWorkerName.trim() || !job) return;
@@ -159,21 +217,27 @@ export function JobModal({ job, onClose, onDelete }: Props) {
           {/* Dates */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs text-fg-muted mb-1 block">Start Date</label>
+              <label className="text-xs text-fg-muted mb-1 block">
+                Start Date{hasPhases && <span className="text-fg-muted/60 ml-1">(auto)</span>}
+              </label>
               <input
                 type="date"
                 value={startDate}
                 onChange={e => setStartDate(e.target.value)}
-                className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content"
+                className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content disabled:opacity-50"
+                disabled={hasPhases}
               />
             </div>
             <div>
-              <label className="text-xs text-fg-muted mb-1 block">End Date</label>
+              <label className="text-xs text-fg-muted mb-1 block">
+                End Date{hasPhases && <span className="text-fg-muted/60 ml-1">(auto)</span>}
+              </label>
               <input
                 type="date"
                 value={endDate}
                 onChange={e => setEndDate(e.target.value)}
-                className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content"
+                className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content disabled:opacity-50"
+                disabled={hasPhases}
               />
             </div>
           </div>
@@ -189,6 +253,38 @@ export function JobModal({ job, onClose, onDelete }: Props) {
               dir="auto"
             />
           </div>
+
+          {/* Phases — only for existing jobs */}
+          {!isNew && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs text-fg-muted font-semibold uppercase tracking-wider">Phases</label>
+                <button
+                  onClick={handleAddPhase}
+                  className="btn-raised rounded-lg px-3 py-1 text-xs"
+                >
+                  + Add Phase
+                </button>
+              </div>
+
+              {phases.length === 0 ? (
+                <div className="text-xs text-fg-muted py-3 text-center border border-dashed border-border-subtle rounded-lg">
+                  No phases — the job appears as a single bar on the timeline.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {phases.map(phase => (
+                    <PhaseRow
+                      key={phase.id}
+                      phase={phase}
+                      onUpdate={handleUpdatePhase}
+                      onDelete={handleDeletePhase}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Workers Kanban — only for existing jobs */}
           {!isNew && (
@@ -348,6 +444,80 @@ export function JobModal({ job, onClose, onDelete }: Props) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Phase row component ──
+
+function PhaseRow({ phase, onUpdate, onDelete }: {
+  phase: RenovationPhase;
+  onUpdate: (id: number, updates: Partial<RenovationPhase>) => void;
+  onDelete: (id: number) => void;
+}) {
+  const [name, setName] = useState(phase.name);
+  const [startDate, setStartDate] = useState(phase.start_date);
+  const [endDate, setEndDate] = useState(phase.end_date);
+
+  // Sync from props if server data changes
+  useEffect(() => { setName(phase.name); }, [phase.name]);
+  useEffect(() => { setStartDate(phase.start_date); }, [phase.start_date]);
+  useEffect(() => { setEndDate(phase.end_date); }, [phase.end_date]);
+
+  return (
+    <div className="card-raised rounded-lg p-3 flex items-center gap-3">
+      {/* Color dot */}
+      <div className="shrink-0 relative group/color">
+        <span className="w-4 h-4 rounded-full block border border-black/10" style={{ backgroundColor: phase.color }} />
+        <div className="absolute left-0 top-6 hidden group-hover/color:flex gap-1 bg-surface-secondary border border-border rounded-lg p-1.5 shadow-lg z-10">
+          {PRESET_COLORS.map(c => (
+            <button
+              key={c}
+              onClick={() => onUpdate(phase.id, { color: c })}
+              className={`w-5 h-5 rounded-full border-2 transition-transform ${
+                phase.color === c ? 'border-fg scale-110' : 'border-transparent hover:scale-105'
+              }`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Name */}
+      <input
+        value={name}
+        onChange={e => setName(e.target.value)}
+        onBlur={() => { if (name !== phase.name) onUpdate(phase.id, { name }); }}
+        onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+        className="input-inset flex-1 rounded px-2 py-1 text-xs font-content min-w-0"
+        dir="auto"
+      />
+
+      {/* Dates */}
+      <input
+        type="date"
+        value={startDate}
+        onChange={e => { setStartDate(e.target.value); onUpdate(phase.id, { start_date: e.target.value }); }}
+        className="input-inset rounded px-2 py-1 text-xs font-content w-[130px] shrink-0"
+      />
+      <span className="text-fg-muted text-xs">→</span>
+      <input
+        type="date"
+        value={endDate}
+        onChange={e => { setEndDate(e.target.value); onUpdate(phase.id, { end_date: e.target.value }); }}
+        className="input-inset rounded px-2 py-1 text-xs font-content w-[130px] shrink-0"
+      />
+
+      {/* Delete */}
+      <button
+        onClick={() => onDelete(phase.id)}
+        className="shrink-0 text-fg-muted hover:text-error p-1 rounded transition-colors"
+        title="Remove phase"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
     </div>
   );
 }

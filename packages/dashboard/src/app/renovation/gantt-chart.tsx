@@ -1,15 +1,18 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
-import type { RenovationJob } from './page';
+import type { RenovationJob, RenovationPhase } from './page';
 
 interface Props {
   jobs: RenovationJob[];
+  phases: RenovationPhase[];
   view: 'week' | 'month';
   projectStart: string | null;
   projectEnd: string | null;
   onJobClick: (job: RenovationJob) => void;
   onJobDatesChange: (id: number, start: string, end: string) => void;
+  onPhaseDatesChange: (phaseId: number, start: string, end: string) => void;
+  onAddJob: () => void;
 }
 
 // ── helpers ──
@@ -38,6 +41,11 @@ function parseDate(s: string): Date {
   return new Date(y, m - 1, d);
 }
 
+function daysBetween(a: string, b: string): number {
+  const ms = parseDate(b).getTime() - parseDate(a).getTime();
+  return Math.round(ms / 86400000);
+}
+
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function deriveStatus(job: RenovationJob): string {
@@ -61,13 +69,13 @@ interface MonthSpan { label: string; colSpan: number }
 
 function computeRange(jobs: RenovationJob[], projectStart: string | null, projectEnd: string | null): [Date, Date] {
   const now = new Date();
-  let lo: Date, hi: Date;
 
   if (projectStart && projectEnd) return [parseDate(projectStart), parseDate(projectEnd)];
 
   const jobDates = jobs.flatMap(j => [parseDate(j.start_date), parseDate(j.end_date)]);
   const allTimes = [...jobDates.map(d => d.getTime()), now.getTime()];
 
+  let lo: Date, hi: Date;
   if (projectStart) {
     lo = parseDate(projectStart);
   } else {
@@ -114,14 +122,14 @@ function buildMonthSpans(columns: Column[]): MonthSpan[] {
   return spans;
 }
 
-function barPosition(jobStart: string, jobEnd: string, columns: Column[]): { left: number; width: number } | null {
+function barPosition(start: string, end: string, columns: Column[]): { left: number; width: number } | null {
   if (!columns.length) return null;
   const t0 = columns[0].start.getTime();
   const t1 = columns[columns.length - 1].end.getTime();
   const span = t1 - t0;
   if (span <= 0) return null;
-  const s = Math.max(parseDate(jobStart).getTime(), t0);
-  const e = Math.min(parseDate(jobEnd).getTime(), t1);
+  const s = Math.max(parseDate(start).getTime(), t0);
+  const e = Math.min(parseDate(end).getTime(), t1);
   if (s >= e) return null;
   return { left: ((s - t0) / span) * 100, width: Math.max(((e - s) / span) * 100, 0.5) };
 }
@@ -135,26 +143,141 @@ function todayPosition(columns: Column[]): number | null {
   return ((now - t0) / (t1 - t0)) * 100;
 }
 
+// ── Tooltip ──
+
+function Tooltip({ name, startDate, endDate, color, style }: {
+  name: string; startDate: string; endDate: string; color: string;
+  style: React.CSSProperties;
+}) {
+  const days = daysBetween(startDate, endDate);
+  return (
+    <div
+      className="absolute z-50 pointer-events-none bg-surface-secondary border border-border rounded-lg shadow-lg px-3 py-2 text-xs whitespace-nowrap"
+      style={style}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+        <span className="font-semibold text-fg font-content" dir="auto">{name}</span>
+      </div>
+      <div className="text-fg-muted font-content">
+        {startDate} → {endDate} · {days} day{days !== 1 ? 's' : ''}
+      </div>
+    </div>
+  );
+}
+
+// ── Bar component (shared between job bars and phase bars) ──
+
+interface BarProps {
+  barPos: { left: number; width: number };
+  color: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  statusClasses?: { bg: string; border: string };
+  isDragging: boolean;
+  onMouseDownMove: (e: React.MouseEvent) => void;
+  onMouseDownLeft: (e: React.MouseEvent) => void;
+  onMouseDownRight: (e: React.MouseEvent) => void;
+  onDoubleClick: () => void;
+}
+
+function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
+  const [hover, setHover] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
+
+  const useCustomColor = !!color;
+
+  useEffect(() => {
+    if (hover && barRef.current) {
+      const rect = barRef.current.getBoundingClientRect();
+      const parentRect = barRef.current.offsetParent?.getBoundingClientRect();
+      if (parentRect) {
+        setTooltipStyle({
+          left: rect.left - parentRect.left + rect.width / 2,
+          bottom: parentRect.bottom - rect.top + 4,
+          transform: 'translateX(-50%)',
+        });
+      }
+    }
+  }, [hover]);
+
+  return (
+    <div
+      ref={barRef}
+      className="absolute top-3 h-[28px] group/bar"
+      style={{ left: `${barPos.left}%`, width: `${barPos.width}%`, minWidth: 20, zIndex: 5 }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      {/* Body */}
+      <div
+        className={`absolute inset-0 rounded-md flex items-center overflow-hidden ${useCustomColor ? 'border border-black/10' : `${statusClasses?.bg || 'bg-gray-400/90'} border ${statusClasses?.border || 'border-gray-500'}`}`}
+        style={{
+          cursor: isDragging ? 'grabbing' : 'grab',
+          ...(useCustomColor ? { backgroundColor: color } : {}),
+        }}
+        onMouseDown={onMouseDownMove}
+        onDoubleClick={onDoubleClick}
+      >
+        <span className="px-2.5 text-[11px] font-medium text-white truncate select-none drop-shadow-sm flex-1 text-center font-content" dir="auto">
+          {label}
+        </span>
+      </div>
+      {/* Left handle */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-20 flex items-center justify-start"
+        onMouseDown={onMouseDownLeft}
+      >
+        <div className="w-1 h-3 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity ml-0.5" />
+      </div>
+      {/* Right handle */}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-20 flex items-center justify-end"
+        onMouseDown={onMouseDownRight}
+      >
+        <div className="w-1 h-3 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity mr-0.5" />
+      </div>
+      {/* Tooltip */}
+      {hover && !isDragging && (
+        <Tooltip name={label} startDate={startDate} endDate={endDate} color={color || '#9ca3af'} style={tooltipStyle} />
+      )}
+    </div>
+  );
+}
+
 // ── component ──
 
-export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, onJobDatesChange, onAddJob }: Props & { onAddJob: () => void }) {
-  // Compute a stable range that doesn't change when individual job dates shift during drag
+export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJobClick, onJobDatesChange, onPhaseDatesChange, onAddJob }: Props) {
   const range = useMemo(() => computeRange(jobs, projectStart, projectEnd), [jobs, projectStart, projectEnd]);
   const columns = useMemo(() => buildColumns(view, range[0], range[1]), [view, range]);
   const monthSpans = useMemo(() => view === 'week' ? buildMonthSpans(columns) : [], [view, columns]);
+
+  // Index phases by job_id
+  const phasesByJob = useMemo(() => {
+    const map = new Map<number, RenovationPhase[]>();
+    for (const p of phases) {
+      if (!map.has(p.job_id)) map.set(p.job_id, []);
+      map.get(p.job_id)!.push(p);
+    }
+    return map;
+  }, [phases]);
 
   const [todayPos, setTodayPos] = useState<number | null>(null);
   useEffect(() => { setTodayPos(todayPosition(columns)); }, [columns]);
 
   // ── dragging ──
   const timelineRef = useRef<HTMLDivElement>(null);
-  const cbRef = useRef(onJobDatesChange);
-  cbRef.current = onJobDatesChange;
+  const jobCbRef = useRef(onJobDatesChange);
+  jobCbRef.current = onJobDatesChange;
+  const phaseCbRef = useRef(onPhaseDatesChange);
+  phaseCbRef.current = onPhaseDatesChange;
 
-  // Freeze columns at drag start so the coordinate system stays stable
   const frozenCols = useRef(columns);
   const dragInfo = useRef<{
-    jobId: number;
+    type: 'job' | 'phase';
+    id: number;
     edge: 'left' | 'right' | 'move';
     startX: number;
     origStart: string;
@@ -163,7 +286,7 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
   } | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const onMouseDown = useCallback((e: React.MouseEvent, job: RenovationJob, edge: 'left' | 'right' | 'move') => {
+  const onMouseDown = useCallback((e: React.MouseEvent, type: 'job' | 'phase', id: number, startDate: string, endDate: string, edge: 'left' | 'right' | 'move') => {
     e.stopPropagation();
     e.preventDefault();
     if (!timelineRef.current || !columns.length) return;
@@ -174,11 +297,12 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
     const t1 = columns[columns.length - 1].end.getTime();
 
     dragInfo.current = {
-      jobId: job.id,
+      type,
+      id,
       edge,
       startX: e.clientX,
-      origStart: job.start_date,
-      origEnd: job.end_date,
+      origStart: startDate,
+      origEnd: endDate,
       pxPerMs: px / (t1 - t0),
     };
     setDragging(true);
@@ -210,7 +334,12 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
         ns = addDays(s0, daysDelta);
         ne = addDays(e0, daysDelta);
       }
-      cbRef.current(d.jobId, fmtDate(ns), fmtDate(ne));
+
+      if (d.type === 'job') {
+        jobCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
+      } else {
+        phaseCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
+      }
     };
 
     const onUp = () => { dragInfo.current = null; setDragging(false); };
@@ -220,7 +349,6 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
   }, [dragging]);
 
-  // While dragging, use frozen columns for position so the grid doesn't jump
   const displayCols = dragging ? frozenCols.current : columns;
 
   return (
@@ -265,11 +393,10 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
 
           <tbody>
             {jobs.map((job) => {
-              const bar = barPosition(job.start_date, job.end_date, displayCols);
+              const jobPhases = phasesByJob.get(job.id) || [];
+              const hasPhases = jobPhases.length > 0;
               const colors = BAR_COLORS[deriveStatus(job)] || BAR_COLORS.new;
               const totalCols = displayCols.length;
-
-              const useCustomColor = !!job.color;
 
               return (
                 <tr key={job.id} className="border-b border-border-subtle hover:bg-surface-hover/50 transition-colors">
@@ -305,9 +432,8 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
                     </div>
                   </td>
 
-                  {/* Timeline cells — merged into one relative container */}
+                  {/* Timeline */}
                   <td colSpan={totalCols} className="relative p-0" style={{ height: 52 }}>
-                    {/* ref on first row for measuring */}
                     <div ref={timelineRef} className="absolute inset-0">
                       {/* Grid lines */}
                       <div className="absolute inset-0 flex pointer-events-none">
@@ -321,41 +447,47 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
                         <div className="absolute top-0 bottom-0 w-px bg-error/50 z-10 pointer-events-none" style={{ left: `${todayPos}%` }} />
                       )}
 
-                      {/* Bar */}
-                      {bar && (
-                        <div
-                          className="absolute top-3 h-[28px] group/bar"
-                          style={{ left: `${bar.left}%`, width: `${bar.width}%`, minWidth: 20, zIndex: 5 }}
-                        >
-                          {/* Body — drag to move whole bar */}
-                          <div
-                            className={`absolute inset-0 rounded-md flex items-center overflow-hidden ${useCustomColor ? 'border border-black/10' : `${colors.bg} border ${colors.border}`}`}
-                            style={{
-                              cursor: dragging ? 'grabbing' : 'grab',
-                              ...(useCustomColor ? { backgroundColor: job.color } : {}),
-                            }}
-                            onMouseDown={e => onMouseDown(e, job, 'move')}
-                            onDoubleClick={() => onJobClick(job)}
-                          >
-                            <span className="px-2.5 text-[11px] font-medium text-white truncate select-none drop-shadow-sm flex-1 text-center font-content" dir="auto">
-                              {job.name}
-                            </span>
-                          </div>
-                          {/* Left handle — resize start */}
-                          <div
-                            className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-20 flex items-center justify-start"
-                            onMouseDown={e => onMouseDown(e, job, 'left')}
-                          >
-                            <div className="w-1 h-3 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity ml-0.5" />
-                          </div>
-                          {/* Right handle — resize end */}
-                          <div
-                            className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-20 flex items-center justify-end"
-                            onMouseDown={e => onMouseDown(e, job, 'right')}
-                          >
-                            <div className="w-1 h-3 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity mr-0.5" />
-                          </div>
-                        </div>
+                      {/* Bars: either phases or single job bar */}
+                      {hasPhases ? (
+                        jobPhases.map(phase => {
+                          const pos = barPosition(phase.start_date, phase.end_date, displayCols);
+                          if (!pos) return null;
+                          return (
+                            <GanttBar
+                              key={`phase-${phase.id}`}
+                              barPos={pos}
+                              color={phase.color}
+                              label={phase.name}
+                              startDate={phase.start_date}
+                              endDate={phase.end_date}
+                              isDragging={dragging}
+                              onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
+                              onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
+                              onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
+                              onDoubleClick={() => onJobClick(job)}
+                            />
+                          );
+                        })
+                      ) : (
+                        (() => {
+                          const pos = barPosition(job.start_date, job.end_date, displayCols);
+                          if (!pos) return null;
+                          return (
+                            <GanttBar
+                              barPos={pos}
+                              color={job.color}
+                              label={job.name}
+                              startDate={job.start_date}
+                              endDate={job.end_date}
+                              statusClasses={!job.color ? colors : undefined}
+                              isDragging={dragging}
+                              onMouseDownMove={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'move')}
+                              onMouseDownLeft={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'left')}
+                              onMouseDownRight={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'right')}
+                              onDoubleClick={() => onJobClick(job)}
+                            />
+                          );
+                        })()
                       )}
                     </div>
                   </td>
