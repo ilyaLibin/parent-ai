@@ -11,6 +11,7 @@ const links = [
   { href: '/knowledge', label: 'knowledge' },
   { href: '/messages', label: 'messages' },
   { href: '/logs', label: 'logs' },
+  { href: '/tts', label: 'tts' },
   { href: '/settings', label: 'settings' },
 ];
 

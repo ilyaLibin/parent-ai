@@ -1,0 +1,9 @@
+{
+  "name": "@parent-ai/tts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kokoro TTS Flask service (Python)",
+  "scripts": {
+    "dev": "python app.py"
+  }
+}

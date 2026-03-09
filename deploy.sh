@@ -17,12 +17,12 @@ REMOTE_DIR="${MAC_MINI_DIR:-~/parent-ai}"
 
 if [ -z "$SERVICE" ]; then
   echo "Usage: ./deploy.sh <service|all>"
-  echo "Services: listener, api, telegram, cron, dashboard, all"
+  echo "Services: listener, api, telegram, cron, dashboard, tts, all"
   exit 1
 fi
 
 if [ "$SERVICE" = "all" ]; then
-  SERVICES="listener api telegram cron dashboard"
+  SERVICES="listener api telegram cron dashboard tts"
 else
   SERVICES="$SERVICE"
 fi

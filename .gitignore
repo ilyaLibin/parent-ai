@@ -6,3 +6,7 @@ dist/
 data/
 auth_state/
 *.log
+
+# Python
+venv/
+__pycache__/

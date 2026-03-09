@@ -44,6 +44,17 @@ services:
       - api
     restart: unless-stopped
 
+  tts:
+    image: parent-ai-tts:latest
+    build:
+      context: .
+      dockerfile: packages/tts/Dockerfile
+    ports:
+      - "5050:5050"
+    environment:
+      - TTS_API_TOKEN=${TTS_API_TOKEN}
+    restart: unless-stopped
+
   dashboard:
     image: parent-ai-dashboard:latest
     build:
@@ -53,7 +64,10 @@ services:
       - "3333:3333"
     environment:
       - API_URL=http://api:3033
+      - TTS_URL=http://tts:5050
+      - TTS_API_TOKEN=${TTS_API_TOKEN}
     depends_on:
       - api
+      - tts
     restart: unless-stopped
 

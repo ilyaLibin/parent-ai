@@ -1,0 +1,7 @@
+kokoro>=0.9.4
+flask>=3.0
+flask-cors>=4.0
+flask-limiter>=3.0
+soundfile
+numpy
+misaki[en]>=0.9.4
