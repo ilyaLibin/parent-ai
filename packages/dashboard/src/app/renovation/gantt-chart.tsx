@@ -269,6 +269,8 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
               const colors = BAR_COLORS[deriveStatus(job)] || BAR_COLORS.new;
               const totalCols = displayCols.length;
 
+              const useCustomColor = !!job.color;
+
               return (
                 <tr key={job.id} className="border-b border-border-subtle hover:bg-surface-hover/50 transition-colors">
                   {/* Left info */}
@@ -327,11 +329,15 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
                         >
                           {/* Body — drag to move whole bar */}
                           <div
-                            className={`absolute inset-0 rounded-md ${colors.bg} border ${colors.border} flex items-center overflow-hidden`}
-                            style={{ cursor: dragging ? 'grabbing' : 'grab' }}
+                            className={`absolute inset-0 rounded-md flex items-center overflow-hidden ${useCustomColor ? 'border border-black/10' : `${colors.bg} border ${colors.border}`}`}
+                            style={{
+                              cursor: dragging ? 'grabbing' : 'grab',
+                              ...(useCustomColor ? { backgroundColor: job.color } : {}),
+                            }}
                             onMouseDown={e => onMouseDown(e, job, 'move')}
+                            onDoubleClick={() => onJobClick(job)}
                           >
-                            <span className="px-2.5 text-[11px] font-medium text-white truncate select-none drop-shadow-sm flex-1 text-center" dir="auto">
+                            <span className="px-2.5 text-[11px] font-medium text-white truncate select-none drop-shadow-sm flex-1 text-center font-content" dir="auto">
                               {job.name}
                             </span>
                           </div>
