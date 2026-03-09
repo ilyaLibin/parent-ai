@@ -12,6 +12,17 @@ const STAGE_LABELS: Record<string, string> = {
 };
 const PRESET_COLORS = ['#4f46e5', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280'];
 
+function nameToColor(name: string): string {
+  if (!name.trim()) return PRESET_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    hash |= 0;
+  }
+  const h = ((hash % 360) + 360) % 360;
+  return `hsl(${h}, 65%, 50%)`;
+}
+
 interface Props {
   job: RenovationJob | null;
   onClose: () => void;
@@ -200,7 +211,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
               <label className="text-xs text-fg-muted mb-1 block">Name</label>
               <input
                 value={name}
-                onChange={e => setName(e.target.value)}
+                onChange={e => { setName(e.target.value); setColor(nameToColor(e.target.value)); }}
                 className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content"
                 placeholder="e.g. Replace bedroom windows"
                 dir="auto"
@@ -209,7 +220,9 @@ export function JobModal({ job, onClose, onDelete }: Props) {
             </div>
             <div className="shrink-0">
               <label className="text-xs text-fg-muted mb-1 block">Color</label>
-              <div className="flex gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="w-6 h-6 rounded-full border-2 border-fg shrink-0" style={{ backgroundColor: color }} />
+                <span className="w-px h-4 bg-border-subtle mx-0.5" />
                 {PRESET_COLORS.map(c => (
                   <button
                     key={c}
@@ -330,7 +343,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
                       placeholder="Worker name"
                       dir="auto"
                       autoFocus
-                      onKeyDown={e => e.key === 'Enter' && handleAddWorker()}
+                      onKeyDown={e => { if (e.key === 'Enter') handleAddWorker(); if (e.key === 'Escape') { setShowAddWorker(false); setNewWorkerName(''); setNewWorkerPhone(''); } }}
                     />
                   </div>
                   <div className="flex-1">
@@ -340,7 +353,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
                       onChange={e => setNewWorkerPhone(e.target.value)}
                       className="input-inset w-full rounded px-2 py-1.5 text-xs font-content"
                       placeholder="Phone number"
-                      onKeyDown={e => e.key === 'Enter' && handleAddWorker()}
+                      onKeyDown={e => { if (e.key === 'Enter') handleAddWorker(); if (e.key === 'Escape') { setShowAddWorker(false); setNewWorkerName(''); setNewWorkerPhone(''); } }}
                     />
                   </div>
                   <button onClick={handleAddWorker} className="btn-accent rounded px-3 py-1.5 text-xs shrink-0">
@@ -556,9 +569,9 @@ function PhaseRow({ phase, onUpdate, onDelete, onDragStart, onDragEnd, onDragOve
       {/* Name */}
       <input
         value={name}
-        onChange={e => setName(e.target.value)}
+        onChange={e => { setName(e.target.value); onUpdate(phase.id, { color: nameToColor(e.target.value) }); }}
         onBlur={() => { if (name !== phase.name) onUpdate(phase.id, { name }); }}
-        onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+        onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur(); } if (e.key === 'Escape') { if (!name.trim()) onDelete(phase.id); else e.currentTarget.blur(); } }}
         className="input-inset flex-1 rounded px-2 py-1 text-xs font-content min-w-0"
         placeholder="Phase name"
         dir="auto"
