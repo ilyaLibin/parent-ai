@@ -257,7 +257,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
 
       {/* Tooltip on hover */}
       {(hover || isActiveDrag) && (
-        <div className="absolute z-50 pointer-events-none bg-surface-secondary border border-border rounded-lg shadow-lg px-3 py-2 text-xs whitespace-nowrap"
+        <div className="absolute z-[100] pointer-events-none bg-surface-secondary border border-border rounded-lg shadow-lg px-3 py-2 text-xs whitespace-nowrap"
           style={{ left: 0, bottom: '100%', marginBottom: 4 }}
         >
           <div className="flex items-center gap-2 mb-1">
@@ -357,6 +357,11 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   }, [dragging]);
 
   const displayCols = dragging ? frozenCols.current : columns;
+
+  const todayColIdx = useMemo(() => {
+    const now = Date.now();
+    return displayCols.findIndex(c => now >= c.start.getTime() && now <= c.end.getTime() + 86400000 - 1);
+  }, [displayCols]);
 
   // ── pan drag (on empty timeline areas) ──
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -461,7 +466,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
             {/* Month strip */}
             {showMonthStrip && monthSpans.length > 0 && (
               <tr className="border-b border-border-subtle">
-                <th className="sticky left-0 z-20 bg-surface" />
+                <th className="sticky left-0 z-20 bg-surface shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]" />
                 {monthSpans.map((span, i) => (
                   <th
                     key={i}
@@ -476,13 +481,13 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
 
             {/* Column headers */}
             <tr className="border-b border-border">
-              <th className="sticky left-0 z-20 bg-surface text-left px-4 py-3 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
+              <th className="sticky left-0 z-20 bg-surface shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] text-left px-4 py-3 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
                 Task
               </th>
               {displayCols.map((col, i) => (
                 <th key={i} className={`text-center px-1 py-2 text-xs border-l border-border-subtle font-normal ${col.isWeekend ? 'bg-surface-hover/40' : ''}`}>
-                  <div className="font-semibold text-fg-secondary">{col.label}</div>
-                  {col.sublabel && <div className="text-fg-muted text-[10px]">{col.sublabel}</div>}
+                  <div className={`font-semibold ${i === todayColIdx ? 'text-error' : 'text-fg-secondary'}`}>{col.label}</div>
+                  {col.sublabel && <div className={`text-[10px] ${i === todayColIdx ? 'text-error/70' : 'text-fg-muted'}`}>{col.sublabel}</div>}
                 </th>
               ))}
             </tr>
@@ -504,7 +509,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                   onDrop={e => onRowDrop(e, job.id)}
                 >
                   {/* Left info */}
-                  <td className="sticky left-0 z-10 bg-surface px-4 py-3 align-middle">
+                  <td className="sticky left-0 z-10 bg-surface shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] px-4 py-3 align-middle">
                     <div className="group/row flex items-center gap-2">
                       <div
                         draggable
@@ -551,7 +556,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                   {/* Timeline */}
                   <td
                     colSpan={totalCols}
-                    className="relative p-0 overflow-hidden"
+                    className="relative p-0"
                     style={{ height: 56 }}
                     onMouseDown={onPanStart}
                   >
@@ -620,7 +625,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
 
             {/* Add Job row */}
             <tr>
-              <td className="sticky left-0 z-10 bg-surface px-4 py-3">
+              <td className="sticky left-0 z-10 bg-surface shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)] px-4 py-3">
                 <button
                   onClick={onAddJob}
                   className="text-sm text-fg-muted hover:text-accent transition-colors font-medium"
