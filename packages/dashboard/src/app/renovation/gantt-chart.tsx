@@ -137,7 +137,7 @@ function todayPosition(columns: Column[]): number | null {
 
 // ── component ──
 
-export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, onJobDatesChange }: Props) {
+export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, onJobDatesChange, onAddJob }: Props & { onAddJob: () => void }) {
   // Compute a stable range that doesn't change when individual job dates shift during drag
   const range = useMemo(() => computeRange(jobs, projectStart, projectEnd), [jobs, projectStart, projectEnd]);
   const columns = useMemo(() => buildColumns(view, range[0], range[1]), [view, range]);
@@ -362,6 +362,18 @@ export function GanttChart({ jobs, view, projectStart, projectEnd, onJobClick, o
                 </tr>
               );
             })}
+
+            {/* Add Job row */}
+            <tr>
+              <td className="px-4 py-3" colSpan={displayCols.length + 1}>
+                <button
+                  onClick={onAddJob}
+                  className="text-sm text-fg-muted hover:text-accent transition-colors font-medium"
+                >
+                  + Add Job
+                </button>
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
