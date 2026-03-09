@@ -509,7 +509,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                   onDrop={e => onRowDrop(e, job.id)}
                 >
                   {/* Left info */}
-                  <td className="sticky left-0 z-10 bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3 align-middle">
+                  <td className="sticky left-0 z-[11] bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3 align-middle">
                     <div className="group/row flex items-center gap-2">
                       <div
                         draggable
@@ -625,7 +625,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
 
             {/* Add Job row */}
             <tr>
-              <td className="sticky left-0 z-10 bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3">
+              <td className="sticky left-0 z-[11] bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3">
                 <button
                   onClick={onAddJob}
                   className="text-sm text-fg-muted hover:text-accent transition-colors font-medium"
