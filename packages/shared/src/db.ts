@@ -120,6 +120,32 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS renovation_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#4f46e5',
+    notes TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS renovation_workers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    offer_price REAL,
+    stage TEXT NOT NULL DEFAULT 'contact',
+    notes TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (job_id) REFERENCES renovation_jobs(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_renovation_workers_job ON renovation_workers(job_id);
+
   CREATE TABLE IF NOT EXISTS integration_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     integration_type TEXT NOT NULL UNIQUE,
@@ -852,6 +878,148 @@ export function saveIntegrationToken(type: string, token: { access_token: string
 
 export function deleteIntegrationToken(type: string): boolean {
   return db.prepare('DELETE FROM integration_tokens WHERE integration_type = ?').run(type).changes > 0;
+}
+
+// Renovation jobs & workers
+export interface RenovationJob {
+  id: number;
+  name: string;
+  category: string;
+  start_date: string;
+  end_date: string;
+  color: string;
+  notes: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface RenovationJobWithWorker extends RenovationJob {
+  accepted_worker_name: string | null;
+  accepted_worker_price: number | null;
+  worker_count: number;
+  has_accepted_worker: boolean;
+  max_worker_stage: string | null;
+}
+
+export interface RenovationWorker {
+  id: number;
+  job_id: number;
+  name: string;
+  phone: string | null;
+  offer_price: number | null;
+  stage: string;
+  notes: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+const STAGE_ORDER = ['contact', 'contacted', 'offer', 'accepted'];
+
+function deriveMaxStage(rows: { stage: string }[]): string | null {
+  if (rows.length === 0) return null;
+  let max = -1;
+  for (const r of rows) {
+    const idx = STAGE_ORDER.indexOf(r.stage);
+    if (idx > max) max = idx;
+  }
+  return max >= 0 ? STAGE_ORDER[max] : null;
+}
+
+export function getRenovationJobs(): RenovationJobWithWorker[] {
+  const jobs = db.prepare(`
+    SELECT j.*,
+      aw.name as accepted_worker_name,
+      aw.offer_price as accepted_worker_price,
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id) as worker_count
+    FROM renovation_jobs j
+    LEFT JOIN renovation_workers aw ON aw.job_id = j.id AND aw.stage = 'accepted'
+    ORDER BY j.start_date ASC
+  `).all() as (RenovationJob & { accepted_worker_name: string | null; accepted_worker_price: number | null; worker_count: number })[];
+
+  // Get max stage per job
+  const stageRows = db.prepare('SELECT job_id, stage FROM renovation_workers').all() as { job_id: number; stage: string }[];
+  const stagesByJob = new Map<number, { stage: string }[]>();
+  for (const r of stageRows) {
+    if (!stagesByJob.has(r.job_id)) stagesByJob.set(r.job_id, []);
+    stagesByJob.get(r.job_id)!.push(r);
+  }
+
+  return jobs.map(r => ({
+    ...r,
+    has_accepted_worker: r.accepted_worker_name !== null,
+    max_worker_stage: deriveMaxStage(stagesByJob.get(r.id) || []),
+  }));
+}
+
+export function getRenovationJob(id: number): RenovationJobWithWorker | undefined {
+  const row = db.prepare(`
+    SELECT j.*,
+      aw.name as accepted_worker_name,
+      aw.offer_price as accepted_worker_price,
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id) as worker_count
+    FROM renovation_jobs j
+    LEFT JOIN renovation_workers aw ON aw.job_id = j.id AND aw.stage = 'accepted'
+    WHERE j.id = ?
+  `).get(id) as (RenovationJob & { accepted_worker_name: string | null; accepted_worker_price: number | null; worker_count: number }) | undefined;
+  if (!row) return undefined;
+  const stages = db.prepare('SELECT stage FROM renovation_workers WHERE job_id = ?').all(id) as { stage: string }[];
+  return { ...row, has_accepted_worker: row.accepted_worker_name !== null, max_worker_stage: deriveMaxStage(stages) };
+}
+
+export function createRenovationJob(job: { name: string; category: string; start_date: string; end_date: string; color?: string; notes?: string }): RenovationJobWithWorker {
+  const now = Date.now();
+  const result = db.prepare(
+    'INSERT INTO renovation_jobs (name, category, start_date, end_date, color, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(job.name, job.category, job.start_date, job.end_date, job.color ?? '#4f46e5', job.notes ?? null, now, now);
+  return getRenovationJob(Number(result.lastInsertRowid))!;
+}
+
+export function updateRenovationJob(id: number, updates: Partial<{ name: string; category: string; start_date: string; end_date: string; color: string; notes: string }>): RenovationJobWithWorker | undefined {
+  const fields: string[] = [];
+  const values: (string | number)[] = [];
+  for (const [key, val] of Object.entries(updates)) {
+    if (val !== undefined) { fields.push(`${key} = ?`); values.push(val); }
+  }
+  if (fields.length === 0) return getRenovationJob(id);
+  fields.push('updated_at = ?');
+  values.push(Date.now());
+  values.push(id);
+  const changes = db.prepare(`UPDATE renovation_jobs SET ${fields.join(', ')} WHERE id = ?`).run(...values).changes;
+  return changes > 0 ? getRenovationJob(id) : undefined;
+}
+
+export function deleteRenovationJob(id: number): boolean {
+  return db.prepare('DELETE FROM renovation_jobs WHERE id = ?').run(id).changes > 0;
+}
+
+export function getRenovationWorkers(jobId: number): RenovationWorker[] {
+  return db.prepare('SELECT * FROM renovation_workers WHERE job_id = ? ORDER BY created_at ASC').all(jobId) as RenovationWorker[];
+}
+
+export function createRenovationWorker(worker: { job_id: number; name: string; phone?: string; offer_price?: number; stage?: string; notes?: string }): RenovationWorker {
+  const now = Date.now();
+  const result = db.prepare(
+    'INSERT INTO renovation_workers (job_id, name, phone, offer_price, stage, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(worker.job_id, worker.name, worker.phone ?? null, worker.offer_price ?? null, worker.stage ?? 'contact', worker.notes ?? null, now, now);
+  return db.prepare('SELECT * FROM renovation_workers WHERE id = ?').get(result.lastInsertRowid) as RenovationWorker;
+}
+
+export function updateRenovationWorker(id: number, updates: Partial<{ name: string; phone: string; offer_price: number; stage: string; notes: string }>): RenovationWorker | undefined {
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+  for (const [key, val] of Object.entries(updates)) {
+    if (val !== undefined) { fields.push(`${key} = ?`); values.push(val); }
+  }
+  if (fields.length === 0) return db.prepare('SELECT * FROM renovation_workers WHERE id = ?').get(id) as RenovationWorker | undefined;
+  fields.push('updated_at = ?');
+  values.push(Date.now());
+  values.push(id);
+  const changes = db.prepare(`UPDATE renovation_workers SET ${fields.join(', ')} WHERE id = ?`).run(...values).changes;
+  return changes > 0 ? db.prepare('SELECT * FROM renovation_workers WHERE id = ?').get(id) as RenovationWorker : undefined;
+}
+
+export function deleteRenovationWorker(id: number): boolean {
+  return db.prepare('DELETE FROM renovation_workers WHERE id = ?').run(id).changes > 0;
 }
 
 export { db };

@@ -9,6 +9,7 @@ const links = [
   { href: '/tasks', label: 'tasks' },
   { href: '/action-items', label: 'action items' },
   { href: '/knowledge', label: 'knowledge' },
+  { href: '/renovation', label: 'renovation' },
   { href: '/messages', label: 'messages' },
   { href: '/logs', label: 'logs' },
   { href: '/tts', label: 'tts' },
