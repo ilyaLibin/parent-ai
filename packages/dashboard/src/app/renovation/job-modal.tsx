@@ -58,6 +58,8 @@ export function JobModal({ job, onClose, onDelete }: Props) {
   const [editingWorkerId, setEditingWorkerId] = useState<number | null>(null);
   const [editPrice, setEditPrice] = useState('');
   const [dragWorker, setDragWorker] = useState<number | null>(null);
+  const [addWorkerStage, setAddWorkerStage] = useState<string>('contact');
+  const [dragPhaseId, setDragPhaseId] = useState<number | null>(null);
 
   const fetchWorkers = useCallback(async () => {
     if (!job) return;
@@ -131,7 +133,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
     await fetch(`/api/renovation/jobs/${job.id}/workers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newWorkerName, phone: newWorkerPhone || null }),
+      body: JSON.stringify({ name: newWorkerName, phone: newWorkerPhone || null, stage: addWorkerStage }),
     });
     setNewWorkerName('');
     setNewWorkerPhone('');
@@ -255,15 +257,7 @@ export function JobModal({ job, onClose, onDelete }: Props) {
           {/* Phases — only for existing jobs */}
           {!isNew && (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <label className="text-xs text-fg-muted font-semibold uppercase tracking-wider">Phases</label>
-                <button
-                  onClick={handleAddPhase}
-                  className="btn-raised rounded-lg px-3 py-1 text-xs"
-                >
-                  + Add Phase
-                </button>
-              </div>
+              <label className="text-xs text-fg-muted font-semibold uppercase tracking-wider block mb-3">Phases</label>
 
               {phases.length === 0 ? (
                 <div className="text-xs text-fg-muted py-3 text-center border border-dashed border-border-subtle rounded-lg">
@@ -271,31 +265,47 @@ export function JobModal({ job, onClose, onDelete }: Props) {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {phases.map(phase => (
+                  {phases.map((phase, idx) => (
                     <PhaseRow
                       key={phase.id}
                       phase={phase}
                       onUpdate={handleUpdatePhase}
                       onDelete={handleDeletePhase}
+                      onDragStart={() => setDragPhaseId(phase.id)}
+                      onDragEnd={() => setDragPhaseId(null)}
+                      onDragOver={(e: React.DragEvent) => { e.preventDefault(); }}
+                      onDrop={() => {
+                        if (dragPhaseId == null || dragPhaseId === phase.id) return;
+                        const ordered = [...phases];
+                        const fromIdx = ordered.findIndex(p => p.id === dragPhaseId);
+                        const toIdx = ordered.findIndex(p => p.id === phase.id);
+                        if (fromIdx < 0 || toIdx < 0) return;
+                        const [moved] = ordered.splice(fromIdx, 1);
+                        ordered.splice(toIdx, 0, moved);
+                        setPhases(ordered);
+                        ordered.forEach((p, i) => handleUpdatePhase(p.id, { sort_order: i }));
+                      }}
+                      isDragging={dragPhaseId === phase.id}
                     />
                   ))}
                 </div>
               )}
+
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={handleAddPhase}
+                  className="text-xs text-accent hover:underline"
+                >
+                  + Add Phase
+                </button>
+              </div>
             </div>
           )}
 
           {/* Workers Kanban — only for existing jobs */}
           {!isNew && (
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <label className="text-xs text-fg-muted font-semibold uppercase tracking-wider">Workers</label>
-                <button
-                  onClick={() => setShowAddWorker(!showAddWorker)}
-                  className="btn-raised rounded-lg px-3 py-1 text-xs"
-                >
-                  + Add Worker
-                </button>
-              </div>
+              <label className="text-xs text-fg-muted font-semibold uppercase tracking-wider block mb-3">Workers</label>
 
               {/* Add worker form */}
               {showAddWorker && (
@@ -339,11 +349,20 @@ export function JobModal({ job, onClose, onDelete }: Props) {
                       onDragLeave={e => { e.currentTarget.classList.remove('ring-2', 'ring-accent/40'); }}
                       onDrop={e => { e.currentTarget.classList.remove('ring-2', 'ring-accent/40'); handleDrop(stage); }}
                     >
-                      <div className="px-2 py-2 border-b border-border-subtle">
-                        <span className="text-[10px] font-semibold text-fg-secondary uppercase tracking-wider">
-                          {STAGE_LABELS[stage]}
-                        </span>
-                        <span className="text-[10px] text-fg-muted ml-1">({stageWorkers.length})</span>
+                      <div className="px-2 py-2 border-b border-border-subtle flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] font-semibold text-fg-secondary uppercase tracking-wider">
+                            {STAGE_LABELS[stage]}
+                          </span>
+                          <span className="text-[10px] text-fg-muted ml-1">({stageWorkers.length})</span>
+                        </div>
+                        <button
+                          onClick={() => { setAddWorkerStage(stage); setShowAddWorker(!showAddWorker || addWorkerStage !== stage); }}
+                          className="text-fg-muted hover:text-accent text-lg font-medium leading-none transition-colors cursor-pointer"
+                          title="Add worker"
+                        >
+                          +
+                        </button>
                       </div>
                       <div className="p-1.5 space-y-1.5">
                         {stageWorkers.map(w => (
@@ -448,10 +467,15 @@ export function JobModal({ job, onClose, onDelete }: Props) {
 
 // ── Phase row component ──
 
-function PhaseRow({ phase, onUpdate, onDelete }: {
+function PhaseRow({ phase, onUpdate, onDelete, onDragStart, onDragEnd, onDragOver, onDrop, isDragging }: {
   phase: RenovationPhase;
   onUpdate: (id: number, updates: Partial<RenovationPhase>) => void;
   onDelete: (id: number) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: () => void;
+  isDragging: boolean;
 }) {
   const [name, setName] = useState(phase.name);
   const [startDate, setStartDate] = useState(phase.start_date);
@@ -479,11 +503,29 @@ function PhaseRow({ phase, onUpdate, onDelete }: {
   };
 
   return (
-    <div className="card-raised rounded-lg p-3 flex items-center gap-3">
+    <div
+      className={`card-raised rounded-lg p-3 flex items-center gap-3 transition-opacity ${isDragging ? 'opacity-40' : ''}`}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      {/* Drag handle */}
+      <div
+        draggable
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        className="shrink-0 cursor-grab active:cursor-grabbing text-fg-muted/40 hover:text-fg-muted transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
+          <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+          <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
+        </svg>
+      </div>
       {/* Color dot */}
       <div className="shrink-0 relative group/color">
-        <span className="w-4 h-4 rounded-full block border border-black/10" style={{ backgroundColor: phase.color }} />
-        <div className="absolute left-0 top-6 hidden group-hover/color:flex gap-1 bg-surface-secondary border border-border rounded-lg p-1.5 shadow-lg z-10">
+        <span className="w-4 h-4 rounded-full block border border-black/10 cursor-pointer" style={{ backgroundColor: phase.color }} />
+        <div className="absolute left-0 top-4 pt-2 hidden group-hover/color:flex gap-1 z-10">
+        <div className="flex gap-1 bg-surface-secondary border border-border rounded-lg p-1.5 shadow-lg">
           {PRESET_COLORS.map(c => (
             <button
               key={c}
@@ -494,6 +536,7 @@ function PhaseRow({ phase, onUpdate, onDelete }: {
               style={{ backgroundColor: c }}
             />
           ))}
+        </div>
         </div>
       </div>
 

@@ -524,14 +524,14 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                           <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
                         </svg>
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0" dir="auto">
                         <div className="flex items-center gap-2">
                           {!job.has_accepted_worker && (
                             <span className="text-amber-500 text-sm shrink-0" title="No worker assigned">&#9888;</span>
                           )}
-                          <span className="font-medium text-sm text-fg truncate" dir="auto">{job.name}</span>
+                          <span className="font-medium text-sm text-fg truncate font-content" dir="auto">{job.name}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 mt-0.5 text-xs text-fg-muted">
+                        <div className="flex items-center gap-1.5 mt-0.5 text-xs text-fg-muted font-content">
                           {job.accepted_worker_name && <span className="text-accent" dir="auto">{job.accepted_worker_name}</span>}
                           {!hidePrices && job.accepted_worker_price != null && (
                             <>

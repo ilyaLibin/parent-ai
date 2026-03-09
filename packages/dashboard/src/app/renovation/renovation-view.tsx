@@ -138,7 +138,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
             <div>
               <label className="text-xs text-fg-muted mb-1 block">Project Name</label>
               <input
-                value={settingsForm.project_name ?? ''}
+                value={settingsForm.project_name || ''}
                 onChange={e => setSettingsForm(s => ({ ...s, project_name: e.target.value || null }))}
                 className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content"
                 placeholder="My Renovation"
@@ -149,7 +149,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
               <label className="text-xs text-fg-muted mb-1 block">Project Start</label>
               <input
                 type="date"
-                value={settingsForm.project_start ?? ''}
+                value={settingsForm.project_start || ''}
                 onChange={e => setSettingsForm(s => ({ ...s, project_start: e.target.value || null }))}
                 className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content"
               />
@@ -158,7 +158,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
               <label className="text-xs text-fg-muted mb-1 block">Project End</label>
               <input
                 type="date"
-                value={settingsForm.project_end ?? ''}
+                value={settingsForm.project_end || ''}
                 onChange={e => setSettingsForm(s => ({ ...s, project_end: e.target.value || null }))}
                 className="input-inset w-full rounded-lg px-3 py-2 text-sm font-content"
               />
