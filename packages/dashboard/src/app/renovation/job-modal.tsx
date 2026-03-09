@@ -96,18 +96,16 @@ export function JobModal({ job, onClose, onDelete }: Props) {
 
   const handleAddPhase = async () => {
     if (!job) return;
-    // Default: use job dates for first phase, or last phase end → +14 days
+    // Default: single-day event. First phase uses job start, subsequent use last phase end.
     let pStart = startDate;
-    let pEnd = endDate;
     if (phases.length > 0) {
       const lastEnd = phases.map(p => p.end_date).sort().pop()!;
       pStart = lastEnd;
-      pEnd = addDaysStr(lastEnd, 14);
     }
     await fetch(`/api/renovation/jobs/${job.id}/phases`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'New Phase', start_date: pStart, end_date: pEnd, color: color, sort_order: phases.length }),
+      body: JSON.stringify({ name: 'New Phase', start_date: pStart, end_date: pStart, color: color, sort_order: phases.length }),
     });
     fetchPhases();
   };
@@ -458,11 +456,27 @@ function PhaseRow({ phase, onUpdate, onDelete }: {
   const [name, setName] = useState(phase.name);
   const [startDate, setStartDate] = useState(phase.start_date);
   const [endDate, setEndDate] = useState(phase.end_date);
+  const isSingleDay = startDate === endDate;
+  const [showEndDate, setShowEndDate] = useState(!isSingleDay);
 
   // Sync from props if server data changes
   useEffect(() => { setName(phase.name); }, [phase.name]);
   useEffect(() => { setStartDate(phase.start_date); }, [phase.start_date]);
-  useEffect(() => { setEndDate(phase.end_date); }, [phase.end_date]);
+  useEffect(() => {
+    setEndDate(phase.end_date);
+    setShowEndDate(phase.start_date !== phase.end_date);
+  }, [phase.end_date, phase.start_date]);
+
+  const handleToggleEndDate = () => {
+    if (showEndDate) {
+      // Collapse to single-day
+      setEndDate(startDate);
+      setShowEndDate(false);
+      onUpdate(phase.id, { end_date: startDate });
+    } else {
+      setShowEndDate(true);
+    }
+  };
 
   return (
     <div className="card-raised rounded-lg p-3 flex items-center gap-3">
@@ -493,20 +507,49 @@ function PhaseRow({ phase, onUpdate, onDelete }: {
         dir="auto"
       />
 
-      {/* Dates */}
+      {/* Date */}
       <input
         type="date"
         value={startDate}
-        onChange={e => { setStartDate(e.target.value); onUpdate(phase.id, { start_date: e.target.value }); }}
+        onChange={e => {
+          setStartDate(e.target.value);
+          const updates: Partial<RenovationPhase> = { start_date: e.target.value };
+          if (!showEndDate) { setEndDate(e.target.value); updates.end_date = e.target.value; }
+          onUpdate(phase.id, updates);
+        }}
         className="input-inset rounded px-2 py-1 text-xs font-content w-[130px] shrink-0"
       />
-      <span className="text-fg-muted text-xs">→</span>
-      <input
-        type="date"
-        value={endDate}
-        onChange={e => { setEndDate(e.target.value); onUpdate(phase.id, { end_date: e.target.value }); }}
-        className="input-inset rounded px-2 py-1 text-xs font-content w-[130px] shrink-0"
-      />
+
+      {showEndDate ? (
+        <>
+          <span className="text-fg-muted text-xs">→</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={e => { setEndDate(e.target.value); onUpdate(phase.id, { end_date: e.target.value }); }}
+            className="input-inset rounded px-2 py-1 text-xs font-content w-[130px] shrink-0"
+          />
+        </>
+      ) : (
+        <button
+          onClick={() => setShowEndDate(true)}
+          className="text-[10px] text-accent hover:underline shrink-0"
+          title="Add end date for a multi-day phase"
+        >
+          + end date
+        </button>
+      )}
+
+      {/* Single-day toggle */}
+      {showEndDate && (
+        <button
+          onClick={handleToggleEndDate}
+          className="text-fg-muted/50 hover:text-fg-muted text-[10px] shrink-0"
+          title="Make single-day event"
+        >
+          1d
+        </button>
+      )}
 
       {/* Delete */}
       <button

@@ -127,6 +127,7 @@ db.exec(`
     start_date TEXT NOT NULL,
     end_date TEXT NOT NULL,
     color TEXT NOT NULL DEFAULT '#4f46e5',
+    sort_order INTEGER NOT NULL DEFAULT 0,
     notes TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -191,6 +192,16 @@ if (!groupColNames.has('tracked')) {
   db.exec('ALTER TABLE groups ADD COLUMN tracked INTEGER NOT NULL DEFAULT 0');
   // Only track groups that actually have messages
   db.exec('UPDATE groups SET tracked = 1 WHERE id IN (SELECT DISTINCT group_id FROM messages)');
+}
+
+// Migrate: add sort_order column to renovation_jobs
+const renovationJobColumns = db.pragma('table_info(renovation_jobs)') as { name: string }[];
+const renovationJobColNames = new Set(renovationJobColumns.map((c) => c.name));
+if (!renovationJobColNames.has('sort_order')) {
+  db.exec('ALTER TABLE renovation_jobs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0');
+  // Set initial sort_order based on existing start_date order
+  const existingJobs = db.prepare('SELECT id FROM renovation_jobs ORDER BY start_date ASC').all() as { id: number }[];
+  existingJobs.forEach((j, i) => db.prepare('UPDATE renovation_jobs SET sort_order = ? WHERE id = ?').run(i, j.id));
 }
 
 // Seed tracked groups from env var (every startup)
@@ -902,6 +913,7 @@ export interface RenovationJob {
   start_date: string;
   end_date: string;
   color: string;
+  sort_order: number;
   notes: string | null;
   created_at: number;
   updated_at: number;
@@ -947,7 +959,7 @@ export function getRenovationJobs(): RenovationJobWithWorker[] {
       (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id) as worker_count
     FROM renovation_jobs j
     LEFT JOIN renovation_workers aw ON aw.job_id = j.id AND aw.stage = 'accepted'
-    ORDER BY j.start_date ASC
+    ORDER BY j.sort_order ASC, j.start_date ASC
   `).all() as (RenovationJob & { accepted_worker_name: string | null; accepted_worker_price: number | null; worker_count: number })[];
 
   // Get max stage per job
@@ -982,13 +994,14 @@ export function getRenovationJob(id: number): RenovationJobWithWorker | undefine
 
 export function createRenovationJob(job: { name: string; category: string; start_date: string; end_date: string; color?: string; notes?: string }): RenovationJobWithWorker {
   const now = Date.now();
+  const maxOrder = (db.prepare('SELECT MAX(sort_order) as m FROM renovation_jobs').get() as { m: number | null })?.m ?? -1;
   const result = db.prepare(
-    'INSERT INTO renovation_jobs (name, category, start_date, end_date, color, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(job.name, job.category, job.start_date, job.end_date, job.color ?? '#4f46e5', job.notes ?? null, now, now);
+    'INSERT INTO renovation_jobs (name, category, start_date, end_date, color, sort_order, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(job.name, job.category, job.start_date, job.end_date, job.color ?? '#4f46e5', maxOrder + 1, job.notes ?? null, now, now);
   return getRenovationJob(Number(result.lastInsertRowid))!;
 }
 
-export function updateRenovationJob(id: number, updates: Partial<{ name: string; category: string; start_date: string; end_date: string; color: string; notes: string }>): RenovationJobWithWorker | undefined {
+export function updateRenovationJob(id: number, updates: Partial<{ name: string; category: string; start_date: string; end_date: string; color: string; sort_order: number; notes: string }>): RenovationJobWithWorker | undefined {
   const fields: string[] = [];
   const values: (string | number)[] = [];
   for (const [key, val] of Object.entries(updates)) {
@@ -1004,6 +1017,15 @@ export function updateRenovationJob(id: number, updates: Partial<{ name: string;
 
 export function deleteRenovationJob(id: number): boolean {
   return db.prepare('DELETE FROM renovation_jobs WHERE id = ?').run(id).changes > 0;
+}
+
+export function reorderRenovationJobs(orderedIds: number[]): void {
+  const stmt = db.prepare('UPDATE renovation_jobs SET sort_order = ?, updated_at = ? WHERE id = ?');
+  const now = Date.now();
+  const tx = db.transaction(() => {
+    orderedIds.forEach((id, i) => stmt.run(i, now, id));
+  });
+  tx();
 }
 
 export function getRenovationWorkers(jobId: number): RenovationWorker[] {

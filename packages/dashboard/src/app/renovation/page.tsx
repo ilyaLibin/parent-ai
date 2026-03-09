@@ -11,6 +11,7 @@ export interface RenovationJob {
   start_date: string;
   end_date: string;
   color: string;
+  sort_order: number;
   notes: string | null;
   accepted_worker_name: string | null;
   accepted_worker_price: number | null;

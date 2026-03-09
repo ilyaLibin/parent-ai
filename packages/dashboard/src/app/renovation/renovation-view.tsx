@@ -5,13 +5,6 @@ import type { RenovationJob, RenovationPhase, RenovationSettings } from './page'
 import { GanttChart } from './gantt-chart';
 import { JobModal } from './job-modal';
 
-const DERIVED_STATUS: Record<string, { dot: string; label: string }> = {
-  new: { dot: 'bg-gray-400', label: 'New (no workers)' },
-  searching: { dot: 'bg-blue-400', label: 'Searching' },
-  quoted: { dot: 'bg-amber-400', label: 'Offer / Quote' },
-  assigned: { dot: 'bg-emerald-400', label: 'Worker Assigned' },
-};
-
 function deriveStatus(job: RenovationJob): string {
   if (!job.max_worker_stage) return 'new';
   if (job.max_worker_stage === 'accepted') return 'assigned';
@@ -58,15 +51,24 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
   };
 
   const handlePhaseDatesChange = async (phaseId: number, start_date: string, end_date: string) => {
+    // Optimistic update for phases — don't re-fetch jobs during drag to avoid row reorder
     setPhases(prev => prev.map(p => p.id === phaseId ? { ...p, start_date, end_date } : p));
     await fetch(`/api/renovation/phases/${phaseId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ start_date, end_date }),
     });
-    // Recalc job dates from server
-    const jobsRes = await fetch('/api/renovation/jobs');
-    if (jobsRes.ok) setJobs(await jobsRes.json());
+  };
+
+  const handleReorderJobs = async (orderedIds: number[]) => {
+    // Optimistic reorder
+    const jobMap = new Map(jobs.map(j => [j.id, j]));
+    setJobs(orderedIds.map(id => jobMap.get(id)!).filter(Boolean));
+    await fetch('/api/renovation/jobs/reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderedIds }),
+    });
   };
 
   const handleClose = () => { setModalOpen(false); setEditingJob(null); refresh(); };
@@ -190,21 +192,9 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
         />
       </div>
 
-      {/* Legend + View Toggle */}
-      <div className="flex items-center justify-between flex-wrap gap-3 max-w-[1400px]">
-        <div className="flex items-center gap-4 text-xs text-fg-secondary flex-wrap">
-          {Object.values(DERIVED_STATUS).map(s => (
-            <span key={s.label} className="flex items-center gap-1.5">
-              <span className={`w-2.5 h-2.5 rounded-full ${s.dot}`} />
-              {s.label}
-            </span>
-          ))}
-          <span className="flex items-center gap-1.5">
-            <span className="text-amber-500 text-sm">&#9888;</span>
-            No worker accepted
-          </span>
-        </div>
-        <div className="flex rounded-lg overflow-hidden border border-border text-sm">
+      {/* View Toggle */}
+      <div className="max-w-[1400px]">
+        <div className="flex rounded-lg overflow-hidden border border-border text-sm w-fit">
           <button
             onClick={() => setView('week')}
             className={`px-4 py-1.5 transition-colors ${view === 'week' ? 'bg-accent text-white font-medium' : 'bg-surface-secondary text-fg-secondary hover:bg-surface-hover'}`}
@@ -230,6 +220,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
         onJobClick={handleOpenEdit}
         onJobDatesChange={handleJobDatesChange}
         onPhaseDatesChange={handlePhaseDatesChange}
+        onReorderJobs={handleReorderJobs}
         onAddJob={handleOpenNew}
       />
 

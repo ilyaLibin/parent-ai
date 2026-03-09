@@ -12,6 +12,7 @@ interface Props {
   onJobClick: (job: RenovationJob) => void;
   onJobDatesChange: (id: number, start: string, end: string) => void;
   onPhaseDatesChange: (phaseId: number, start: string, end: string) => void;
+  onReorderJobs: (orderedIds: number[]) => void;
   onAddJob: () => void;
 }
 
@@ -122,7 +123,7 @@ function buildMonthSpans(columns: Column[]): MonthSpan[] {
   return spans;
 }
 
-function barPosition(start: string, end: string, columns: Column[]): { left: number; width: number } | null {
+function barPosition(start: string, end: string, columns: Column[]): { left: number; width: number; isSingleDay: boolean } | null {
   if (!columns.length) return null;
   const t0 = columns[0].start.getTime();
   const t1 = columns[columns.length - 1].end.getTime();
@@ -130,8 +131,11 @@ function barPosition(start: string, end: string, columns: Column[]): { left: num
   if (span <= 0) return null;
   const s = Math.max(parseDate(start).getTime(), t0);
   const e = Math.min(parseDate(end).getTime(), t1);
-  if (s >= e) return null;
-  return { left: ((s - t0) / span) * 100, width: Math.max(((e - s) / span) * 100, 0.5) };
+  if (s > e) return null;
+  const isSingleDay = start === end;
+  // Single-day events get a minimum visual width
+  const rawWidth = ((e - s) / span) * 100;
+  return { left: ((s - t0) / span) * 100, width: Math.max(rawWidth, 0.3), isSingleDay };
 }
 
 function todayPosition(columns: Column[]): number | null {
@@ -143,33 +147,10 @@ function todayPosition(columns: Column[]): number | null {
   return ((now - t0) / (t1 - t0)) * 100;
 }
 
-// ── Tooltip ──
-
-function Tooltip({ name, startDate, endDate, color, style }: {
-  name: string; startDate: string; endDate: string; color: string;
-  style: React.CSSProperties;
-}) {
-  const days = daysBetween(startDate, endDate);
-  return (
-    <div
-      className="absolute z-50 pointer-events-none bg-surface-secondary border border-border rounded-lg shadow-lg px-3 py-2 text-xs whitespace-nowrap"
-      style={style}
-    >
-      <div className="flex items-center gap-2 mb-1">
-        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-        <span className="font-semibold text-fg font-content" dir="auto">{name}</span>
-      </div>
-      <div className="text-fg-muted font-content">
-        {startDate} → {endDate} · {days} day{days !== 1 ? 's' : ''}
-      </div>
-    </div>
-  );
-}
-
 // ── Bar component (shared between job bars and phase bars) ──
 
 interface BarProps {
-  barPos: { left: number; width: number };
+  barPos: { left: number; width: number; isSingleDay: boolean };
   color: string;
   label: string;
   startDate: string;
@@ -184,64 +165,78 @@ interface BarProps {
 
 function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
   const [hover, setHover] = useState(false);
-  const barRef = useRef<HTMLDivElement>(null);
-  const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
-
   const useCustomColor = !!color;
-
-  useEffect(() => {
-    if (hover && barRef.current) {
-      const rect = barRef.current.getBoundingClientRect();
-      const parentRect = barRef.current.offsetParent?.getBoundingClientRect();
-      if (parentRect) {
-        setTooltipStyle({
-          left: rect.left - parentRect.left + rect.width / 2,
-          bottom: parentRect.bottom - rect.top + 4,
-          transform: 'translateX(-50%)',
-        });
-      }
-    }
-  }, [hover]);
+  const days = daysBetween(startDate, endDate);
+  const isSingleDay = barPos.isSingleDay;
 
   return (
     <div
-      ref={barRef}
-      className="absolute top-3 h-[28px] group/bar"
-      style={{ left: `${barPos.left}%`, width: `${barPos.width}%`, minWidth: 20, zIndex: 5 }}
+      className="absolute group/bar"
+      style={{ left: `${barPos.left}%`, width: isSingleDay ? 12 : `${barPos.width}%`, minWidth: isSingleDay ? 12 : 20, top: 6, zIndex: 5 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      {/* Body */}
-      <div
-        className={`absolute inset-0 rounded-md flex items-center overflow-hidden ${useCustomColor ? 'border border-black/10' : `${statusClasses?.bg || 'bg-gray-400/90'} border ${statusClasses?.border || 'border-gray-500'}`}`}
-        style={{
-          cursor: isDragging ? 'grabbing' : 'grab',
-          ...(useCustomColor ? { backgroundColor: color } : {}),
-        }}
-        onMouseDown={onMouseDownMove}
-        onDoubleClick={onDoubleClick}
-      >
-        <span className="px-2.5 text-[11px] font-medium text-white truncate select-none drop-shadow-sm flex-1 text-center font-content" dir="auto">
+      {/* Bar body */}
+      {isSingleDay ? (
+        /* Diamond marker for single-day events */
+        <div
+          className="w-3 h-3 rotate-45 rounded-sm border border-black/10 mx-auto"
+          style={{
+            cursor: isDragging ? 'grabbing' : 'grab',
+            backgroundColor: color || '#9ca3af',
+          }}
+          onMouseDown={onMouseDownMove}
+          onDoubleClick={onDoubleClick}
+        />
+      ) : (
+        <>
+          <div
+            className={`h-[18px] rounded-md overflow-hidden ${useCustomColor ? 'border border-black/10' : `${statusClasses?.bg || 'bg-gray-400/90'} border ${statusClasses?.border || 'border-gray-500'}`}`}
+            style={{
+              cursor: isDragging ? 'grabbing' : 'grab',
+              ...(useCustomColor ? { backgroundColor: color } : {}),
+            }}
+            onMouseDown={onMouseDownMove}
+            onDoubleClick={onDoubleClick}
+          />
+          {/* Left handle */}
+          <div
+            className="absolute left-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-start"
+            onMouseDown={onMouseDownLeft}
+          >
+            <div className="w-1 h-2.5 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity ml-0.5" />
+          </div>
+          {/* Right handle */}
+          <div
+            className="absolute right-0 top-0 h-[18px] w-3 cursor-ew-resize z-20 flex items-center justify-end"
+            onMouseDown={onMouseDownRight}
+          >
+            <div className="w-1 h-2.5 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity mr-0.5" />
+          </div>
+        </>
+      )}
+
+      {/* Connector line + label below */}
+      <div className="flex flex-col items-start" style={{ marginLeft: isSingleDay ? 5 : 0 }}>
+        <div className="w-px h-2 bg-fg-muted/40" />
+        <span className="text-xs text-fg-secondary font-medium font-content select-none whitespace-nowrap leading-tight" dir="auto">
           {label}
         </span>
       </div>
-      {/* Left handle */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-20 flex items-center justify-start"
-        onMouseDown={onMouseDownLeft}
-      >
-        <div className="w-1 h-3 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity ml-0.5" />
-      </div>
-      {/* Right handle */}
-      <div
-        className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-20 flex items-center justify-end"
-        onMouseDown={onMouseDownRight}
-      >
-        <div className="w-1 h-3 rounded-full bg-white/60 opacity-0 group-hover/bar:opacity-100 transition-opacity mr-0.5" />
-      </div>
-      {/* Tooltip */}
+
+      {/* Tooltip on hover */}
       {hover && !isDragging && (
-        <Tooltip name={label} startDate={startDate} endDate={endDate} color={color || '#9ca3af'} style={tooltipStyle} />
+        <div className="absolute z-50 pointer-events-none bg-surface-secondary border border-border rounded-lg shadow-lg px-3 py-2 text-xs whitespace-nowrap"
+          style={{ left: 0, bottom: '100%', marginBottom: 4 }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color || '#9ca3af' }} />
+            <span className="font-semibold text-fg font-content" dir="auto">{label}</span>
+          </div>
+          <div className="text-fg-muted font-content">
+            {startDate}{startDate !== endDate && ` → ${endDate}`} · {days === 0 ? '1 day' : `${days} day${days !== 1 ? 's' : ''}`}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -249,7 +244,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
 
 // ── component ──
 
-export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJobClick, onJobDatesChange, onPhaseDatesChange, onAddJob }: Props) {
+export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob }: Props) {
   const range = useMemo(() => computeRange(jobs, projectStart, projectEnd), [jobs, projectStart, projectEnd]);
   const columns = useMemo(() => buildColumns(view, range[0], range[1]), [view, range]);
   const monthSpans = useMemo(() => view === 'week' ? buildMonthSpans(columns) : [], [view, columns]);
@@ -267,7 +262,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
   const [todayPos, setTodayPos] = useState<number | null>(null);
   useEffect(() => { setTodayPos(todayPosition(columns)); }, [columns]);
 
-  // ── dragging ──
+  // ── bar dragging (timeline) ──
   const timelineRef = useRef<HTMLDivElement>(null);
   const jobCbRef = useRef(onJobDatesChange);
   jobCbRef.current = onJobDatesChange;
@@ -351,6 +346,41 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
 
   const displayCols = dragging ? frozenCols.current : columns;
 
+  // ── row reorder (HTML5 DnD) ──
+  const [dragRowId, setDragRowId] = useState<number | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<number | null>(null);
+  const reorderCbRef = useRef(onReorderJobs);
+  reorderCbRef.current = onReorderJobs;
+
+  const onRowDragStart = useCallback((e: React.DragEvent, jobId: number) => {
+    setDragRowId(jobId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(jobId));
+  }, []);
+
+  const onRowDragOver = useCallback((e: React.DragEvent, jobId: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTargetId(jobId);
+  }, []);
+
+  const onRowDrop = useCallback((e: React.DragEvent, targetJobId: number) => {
+    e.preventDefault();
+    setDropTargetId(null);
+    const sourceId = dragRowId;
+    setDragRowId(null);
+    if (sourceId === null || sourceId === targetJobId) return;
+
+    const ids = jobs.map(j => j.id);
+    const fromIdx = ids.indexOf(sourceId);
+    const toIdx = ids.indexOf(targetJobId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    ids.splice(fromIdx, 1);
+    ids.splice(toIdx, 0, sourceId);
+    reorderCbRef.current(ids);
+  }, [dragRowId, jobs]);
+
   return (
     <div className="card-raised rounded-xl overflow-hidden">
       <div className="overflow-x-auto">
@@ -399,10 +429,30 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
               const totalCols = displayCols.length;
 
               return (
-                <tr key={job.id} className="border-b border-border-subtle hover:bg-surface-hover/50 transition-colors">
+                <tr
+                  key={job.id}
+                  className={`border-b border-border-subtle hover:bg-surface-hover/50 transition-colors ${dragRowId === job.id ? 'opacity-40' : ''} ${dropTargetId === job.id && dragRowId !== job.id ? 'border-t-2 border-t-accent' : ''}`}
+                  onDragOver={e => onRowDragOver(e, job.id)}
+                  onDragLeave={() => setDropTargetId(null)}
+                  onDrop={e => onRowDrop(e, job.id)}
+                >
                   {/* Left info */}
                   <td className="px-4 py-3 align-middle">
                     <div className="group/row flex items-center gap-2">
+                      {/* Drag handle */}
+                      <div
+                        draggable
+                        onDragStart={e => onRowDragStart(e, job.id)}
+                        onDragEnd={() => { setDragRowId(null); setDropTargetId(null); }}
+                        className="shrink-0 cursor-grab active:cursor-grabbing text-fg-muted/40 hover:text-fg-muted transition-colors"
+                        title="Drag to reorder"
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                          <circle cx="9" cy="6" r="1.5" /><circle cx="15" cy="6" r="1.5" />
+                          <circle cx="9" cy="12" r="1.5" /><circle cx="15" cy="12" r="1.5" />
+                          <circle cx="9" cy="18" r="1.5" /><circle cx="15" cy="18" r="1.5" />
+                        </svg>
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           {!job.has_accepted_worker && (
@@ -433,7 +483,7 @@ export function GanttChart({ jobs, phases, view, projectStart, projectEnd, onJob
                   </td>
 
                   {/* Timeline */}
-                  <td colSpan={totalCols} className="relative p-0" style={{ height: 52 }}>
+                  <td colSpan={totalCols} className="relative p-0" style={{ height: 56 }}>
                     <div ref={timelineRef} className="absolute inset-0">
                       {/* Grid lines */}
                       <div className="absolute inset-0 flex pointer-events-none">

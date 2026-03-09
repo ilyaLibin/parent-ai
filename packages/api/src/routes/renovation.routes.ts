@@ -9,6 +9,7 @@ import {
   createRenovationWorker,
   updateRenovationWorker,
   deleteRenovationWorker,
+  reorderRenovationJobs,
   getRenovationPhases,
   getAllRenovationPhases,
   createRenovationPhase,
@@ -39,6 +40,15 @@ renovation.post('/renovation/jobs', async (c) => {
   }
   const job = createRenovationJob(body);
   return c.json(job, 201);
+});
+
+renovation.put('/renovation/jobs/reorder', async (c) => {
+  const body = await c.req.json();
+  if (!Array.isArray(body.orderedIds)) {
+    return c.json({ error: 'orderedIds array is required' }, 400);
+  }
+  reorderRenovationJobs(body.orderedIds);
+  return c.json({ ok: true });
 });
 
 renovation.put('/renovation/jobs/:id', async (c) => {
