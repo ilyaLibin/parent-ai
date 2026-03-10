@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import type { RenovationJob, RenovationPhase } from './page';
 
 type ZoomLevel = 'month' | 'week' | '3day' | 'day';
@@ -103,6 +103,28 @@ function assignLanes(phases: RenovationPhase[]): { assignments: LaneAssignment[]
 
 const LANE_HEIGHT = 22; // bar height + gap per lane
 const LANE_BAR_H = 18;
+const OUTSIDE_LABEL_LANE_H = 18;
+
+// ── lane assignment for outside (below-bar) labels ──
+
+function assignOutsideLabelLanes(
+  labels: { key: string; leftPx: number; widthPx: number }[]
+): { lanes: Map<string, number>; laneCount: number } {
+  if (labels.length === 0) return { lanes: new Map(), laneCount: 0 };
+  const sorted = [...labels].sort((a, b) => a.leftPx - b.leftPx);
+  const laneRightEdges: number[] = [];
+  const lanes = new Map<string, number>();
+  for (const label of sorted) {
+    let assignedLane = -1;
+    for (let i = 0; i < laneRightEdges.length; i++) {
+      if (laneRightEdges[i] <= label.leftPx) { assignedLane = i; break; }
+    }
+    if (assignedLane === -1) { assignedLane = laneRightEdges.length; laneRightEdges.push(label.leftPx + label.widthPx); }
+    else { laneRightEdges[assignedLane] = label.leftPx + label.widthPx; }
+    lanes.set(label.key, assignedLane);
+  }
+  return { lanes, laneCount: laneRightEdges.length };
+}
 
 // ── column building ──
 
@@ -241,10 +263,12 @@ interface BarProps {
   onMouseDownMove: (e: React.MouseEvent) => void;
   onMouseDownLeft: (e: React.MouseEvent) => void;
   onMouseDownRight: (e: React.MouseEvent) => void;
+  outsideLane?: number;
+  barKey?: string;
   onDoubleClick: () => void;
 }
 
-function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, labelPosition, lane = 0, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
+function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, labelPosition, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
   const [hover, setHover] = useState(false);
   const useCustomColor = !!color;
   const days = daysBetween(startDate, endDate);
@@ -296,8 +320,8 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
       {/* Connector line + label below (outside mode or single-day fallback) */}
       {(!showInside) && (
         <div className="flex flex-col items-start" style={{ marginLeft: isSingleDay ? 5 : 0 }}>
-          <div className="w-px h-2 bg-fg-muted/40" />
-          <div className="flex items-baseline gap-1.5">
+          <div className="w-px bg-fg-muted/40" style={{ height: 8 + outsideLane * OUTSIDE_LABEL_LANE_H }} />
+          <div data-label-key={barKey} className="flex items-baseline gap-1.5">
             <span className="text-[10px] text-fg-muted/60 font-content select-none whitespace-nowrap leading-tight">{fmtShort(startDate)}</span>
             <span className="text-xs text-fg-secondary font-medium font-content select-none whitespace-nowrap leading-tight" dir="auto">
               {label}
@@ -321,6 +345,164 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
         </div>
       )}
     </div>
+  );
+}
+
+// ── row timeline (handles outside label lane measurement) ──
+
+function RowTimeline({
+  job,
+  jobPhases,
+  insideLaneInfo,
+  columns,
+  labelPosition,
+  dragging,
+  activeDragKey,
+  todayPos,
+  colors,
+  onMouseDown,
+  onJobClick,
+  onPanStart,
+  totalCols,
+  timelineRef: parentTimelineRef,
+}: {
+  job: RenovationJob;
+  jobPhases: RenovationPhase[];
+  insideLaneInfo: { assignments: LaneAssignment[]; laneCount: number } | undefined;
+  columns: Column[];
+  labelPosition: LabelPosition;
+  dragging: boolean;
+  activeDragKey: string | null;
+  todayPos: number | null;
+  colors: { bg: string; border: string };
+  onMouseDown: (e: React.MouseEvent, type: 'job' | 'phase', id: number, start: string, end: string, edge: 'left' | 'right' | 'move') => void;
+  onJobClick: (job: RenovationJob) => void;
+  onPanStart: (e: React.MouseEvent) => void;
+  totalCols: number;
+  timelineRef: React.MutableRefObject<HTMLDivElement | null>;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [outsideLanes, setOutsideLanes] = useState<Map<string, number>>(new Map());
+  const [outsideLaneCount, setOutsideLaneCount] = useState(0);
+
+  const hasPhases = jobPhases.length > 0;
+  const insideLaneCount = insideLaneInfo?.laneCount || 1;
+
+  const measureKey = useMemo(() => {
+    if (hasPhases) {
+      return jobPhases.map(p => `${p.id}:${p.start_date}:${p.end_date}:${p.name}`).join('|');
+    }
+    return `${job.id}:${job.start_date}:${job.end_date}:${job.name}`;
+  }, [hasPhases, jobPhases, job]);
+
+  // Measure outside labels and compute stacking lanes (runs before paint)
+  useLayoutEffect(() => {
+    if (dragging) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const els = container.querySelectorAll<HTMLElement>('[data-label-key]');
+    if (els.length === 0) { setOutsideLaneCount(0); return; }
+
+    const containerRect = container.getBoundingClientRect();
+    const items: { key: string; leftPx: number; widthPx: number }[] = [];
+    els.forEach(el => {
+      const key = el.getAttribute('data-label-key')!;
+      const rect = el.getBoundingClientRect();
+      items.push({ key, leftPx: rect.left - containerRect.left, widthPx: rect.width + 6 });
+    });
+
+    const result = assignOutsideLabelLanes(items);
+    setOutsideLanes(result.lanes);
+    setOutsideLaneCount(result.laneCount);
+  }, [labelPosition, columns, measureKey, dragging]);
+
+  const baseH = labelPosition === 'inside'
+    ? Math.max(56, insideLaneCount * LANE_HEIGHT + 12)
+    : 56;
+  const rowH = baseH + Math.max(0, outsideLaneCount - 1) * OUTSIDE_LABEL_LANE_H;
+
+  const setRef = useCallback((el: HTMLDivElement | null) => {
+    containerRef.current = el;
+    parentTimelineRef.current = el;
+  }, [parentTimelineRef]);
+
+  return (
+    <td
+      colSpan={totalCols}
+      className="relative p-0"
+      style={{ height: rowH }}
+      onMouseDown={onPanStart}
+    >
+      <div ref={setRef} className="absolute inset-0">
+        {/* Grid lines */}
+        <div className="absolute inset-0 flex pointer-events-none">
+          {columns.map((col, i) => (
+            <div key={i} className={`flex-1 border-l border-border-subtle ${col.isWeekend ? 'bg-surface-hover/30' : ''}`} />
+          ))}
+        </div>
+
+        {/* Today line */}
+        {todayPos !== null && (
+          <div className="absolute top-0 bottom-0 w-px bg-error/50 z-10 pointer-events-none" style={{ left: `${todayPos}%` }} />
+        )}
+
+        {/* Bars */}
+        {hasPhases ? (
+          (insideLaneInfo?.assignments || jobPhases.map(p => ({ phase: p, lane: 0 }))).map(({ phase, lane }) => {
+            const pos = barPosition(phase.start_date, phase.end_date, columns);
+            if (!pos) return null;
+            const key = `phase-${phase.id}`;
+            return (
+              <GanttBar
+                key={key}
+                barKey={key}
+                barPos={pos}
+                color={phase.color}
+                label={phase.name}
+                startDate={phase.start_date}
+                endDate={phase.end_date}
+                labelPosition={labelPosition}
+                lane={lane}
+                outsideLane={outsideLanes.get(key) || 0}
+                isDragging={dragging}
+                isActiveDrag={activeDragKey === key}
+                onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
+                onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
+                onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
+                onDoubleClick={() => onJobClick(job)}
+              />
+            );
+          })
+        ) : (
+          (() => {
+            const pos = barPosition(job.start_date, job.end_date, columns);
+            if (!pos) return null;
+            const key = `job-${job.id}`;
+            return (
+              <GanttBar
+                barKey={key}
+                barPos={pos}
+                color={job.color}
+                label={job.name}
+                startDate={job.start_date}
+                endDate={job.end_date}
+                statusClasses={!job.color ? colors : undefined}
+                labelPosition={labelPosition}
+                lane={0}
+                outsideLane={outsideLanes.get(key) || 0}
+                isDragging={dragging}
+                isActiveDrag={activeDragKey === `job-${job.id}`}
+                onMouseDownMove={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'move')}
+                onMouseDownLeft={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'left')}
+                onMouseDownRight={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'right')}
+                onDoubleClick={() => onJobClick(job)}
+              />
+            );
+          })()
+        )}
+      </div>
+    </td>
   );
 }
 
@@ -707,84 +889,22 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                   </td>
 
                   {/* Timeline */}
-                  {(() => {
-                    const laneInfo = lanesByJob.get(job.id);
-                    const laneCount = laneInfo?.laneCount || 1;
-                    const rowH = labelPosition === 'inside'
-                      ? Math.max(56, laneCount * LANE_HEIGHT + 12)
-                      : 56;
-                    return (
-                      <td
-                        colSpan={totalCols}
-                        className="relative p-0"
-                        style={{ height: rowH }}
-                        onMouseDown={onPanStart}
-                      >
-                        <div ref={timelineRef} className="absolute inset-0">
-                          {/* Grid lines */}
-                          <div className="absolute inset-0 flex pointer-events-none">
-                            {displayCols.map((col, i) => (
-                              <div key={i} className={`flex-1 border-l border-border-subtle ${col.isWeekend ? 'bg-surface-hover/30' : ''}`} />
-                            ))}
-                          </div>
-
-                          {/* Today line */}
-                          {todayPos !== null && (
-                            <div className="absolute top-0 bottom-0 w-px bg-error/50 z-10 pointer-events-none" style={{ left: `${todayPos}%` }} />
-                          )}
-
-                          {/* Bars */}
-                          {hasPhases ? (
-                            (laneInfo?.assignments || jobPhases.map(p => ({ phase: p, lane: 0 }))).map(({ phase, lane }) => {
-                              const pos = barPosition(phase.start_date, phase.end_date, displayCols);
-                              if (!pos) return null;
-                              return (
-                                <GanttBar
-                                  key={`phase-${phase.id}`}
-                                  barPos={pos}
-                                  color={phase.color}
-                                  label={phase.name}
-                                  startDate={phase.start_date}
-                                  endDate={phase.end_date}
-                                  labelPosition={labelPosition}
-                                  lane={lane}
-                                  isDragging={dragging}
-                                  isActiveDrag={activeDragKey === `phase-${phase.id}`}
-                                  onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
-                                  onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
-                                  onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
-                                  onDoubleClick={() => onJobClick(job)}
-                                />
-                              );
-                            })
-                          ) : (
-                            (() => {
-                              const pos = barPosition(job.start_date, job.end_date, displayCols);
-                              if (!pos) return null;
-                              return (
-                                <GanttBar
-                                  barPos={pos}
-                                  color={job.color}
-                                  label={job.name}
-                                  startDate={job.start_date}
-                                  endDate={job.end_date}
-                                  statusClasses={!job.color ? colors : undefined}
-                                  labelPosition={labelPosition}
-                                  lane={0}
-                                  isDragging={dragging}
-                                  isActiveDrag={activeDragKey === `job-${job.id}`}
-                                  onMouseDownMove={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'move')}
-                                  onMouseDownLeft={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'left')}
-                                  onMouseDownRight={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'right')}
-                                  onDoubleClick={() => onJobClick(job)}
-                                />
-                              );
-                            })()
-                          )}
-                        </div>
-                      </td>
-                    );
-                  })()}
+                  <RowTimeline
+                    job={job}
+                    jobPhases={jobPhases}
+                    insideLaneInfo={lanesByJob.get(job.id)}
+                    columns={displayCols}
+                    labelPosition={labelPosition}
+                    dragging={dragging}
+                    activeDragKey={activeDragKey}
+                    todayPos={todayPos}
+                    colors={colors}
+                    onMouseDown={onMouseDown}
+                    onJobClick={onJobClick}
+                    onPanStart={onPanStart}
+                    totalCols={totalCols}
+                    timelineRef={timelineRef}
+                  />
                 </tr>
               );
             })}
