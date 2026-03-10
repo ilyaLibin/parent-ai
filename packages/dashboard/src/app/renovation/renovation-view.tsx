@@ -116,7 +116,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
             </div>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2" data-print-hide>
           <button
             onClick={() => { setSettingsForm(settings); setShowSettings(!showSettings); }}
             className="btn-raised rounded-lg px-3 py-2 text-sm text-fg-secondary"
@@ -132,7 +132,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
 
       {/* Settings panel */}
       {showSettings && (
-        <div className="card-raised rounded-lg p-4 space-y-3 max-w-[1400px]">
+        <div className="card-raised rounded-lg p-4 space-y-3 max-w-[1400px]" data-print-hide>
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wider mb-2">Project Settings</div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
@@ -189,7 +189,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-[1400px]">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-[1400px]" data-print-hide>
         <StatCard label="Total Jobs" value={totalTasks} />
         <StatCard label="Assigned" value={assigned} accent="text-emerald-500" />
         <StatCard label="Searching" value={searching} accent="text-blue-400" />
@@ -217,7 +217,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
       />
 
       {jobs.length === 0 && (
-        <div className="text-center py-16 text-fg-muted text-sm">
+        <div className="text-center py-16 text-fg-muted text-sm" data-print-hide>
           No renovation jobs yet. Click <strong>+ Add Job</strong> to get started.
         </div>
       )}

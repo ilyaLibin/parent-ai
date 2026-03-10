@@ -120,3 +120,37 @@
   border-bottom-width: 2px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
+
+/* Print styles for Gantt export */
+@media print {
+  @page { size: landscape; margin: 10mm; }
+
+  /* Force light theme for print */
+  :root {
+    --surface: #ffffff !important;
+    --surface-secondary: #ffffff !important;
+    --surface-hover: #f5f5f5 !important;
+    --border: #d0d0d0 !important;
+    --border-subtle: #e0e0e0 !important;
+    --fg: #111111 !important;
+    --fg-secondary: #444444 !important;
+    --fg-muted: #888888 !important;
+    --raised: #ffffff !important;
+    --inset: #f5f5f5 !important;
+  }
+
+  body { background: white !important; }
+
+  /* Hide sidebar, stats, settings, header buttons, modal */
+  nav, [data-print-hide] { display: none !important; }
+
+  main { padding: 0 !important; overflow: visible !important; }
+
+  /* Gantt: remove scroll, expand fully */
+  .gantt-print-container { overflow: visible !important; }
+  .gantt-print-container table { min-width: unset !important; width: 100% !important; }
+
+  /* Hide interactive elements */
+  .gantt-print-toolbar { display: none !important; }
+  [draggable], .cursor-grab { cursor: default !important; }
+}

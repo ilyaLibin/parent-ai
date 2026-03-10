@@ -293,9 +293,12 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
       {(!showInside) && (
         <div className="flex flex-col items-start" style={{ marginLeft: isSingleDay ? 5 : 0 }}>
           <div className="w-px h-2 bg-fg-muted/40" />
-          <span className="text-xs text-fg-secondary font-medium font-content select-none whitespace-nowrap leading-tight" dir="auto">
-            {label}
-          </span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[10px] text-fg-muted/60 font-content select-none whitespace-nowrap leading-tight">{fmtShort(startDate)}</span>
+            <span className="text-xs text-fg-secondary font-medium font-content select-none whitespace-nowrap leading-tight" dir="auto">
+              {label}
+            </span>
+          </div>
         </div>
       )}
 
@@ -321,7 +324,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
 
 export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob }: Props) {
   const [zoom, setZoom] = useState<ZoomLevel>('week');
-  const [labelPosition, setLabelPosition] = useState<LabelPosition>('outside');
+  const [labelPosition, setLabelPosition] = useState<LabelPosition>('inside');
   const zoomIdx = ZOOM_LEVELS.indexOf(zoom);
   const canZoomIn = zoomIdx < ZOOM_LEVELS.length - 1;
   const canZoomOut = zoomIdx > 0;
@@ -493,7 +496,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   return (
     <div className="card-raised rounded-xl overflow-hidden">
       {/* Zoom controls */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-hover/20">
+      <div className="gantt-print-toolbar flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-hover/20">
         <div className="flex items-center gap-3">
           <span className="text-xs text-fg-muted uppercase tracking-wider font-semibold">{zoom === '3day' ? '3-Day' : zoom}</span>
           <button
@@ -511,29 +514,41 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
             {labelPosition === 'outside' ? 'Labels ↓' : 'Labels ←'}
           </button>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => canZoomOut && setZoom(ZOOM_LEVELS[zoomIdx - 1])}
-            disabled={!canZoomOut}
-            className="btn-raised rounded-md w-7 h-7 flex items-center justify-center text-fg-secondary disabled:opacity-30 text-sm font-bold"
-            title="Zoom out"
+            onClick={() => window.print()}
+            className="btn-raised rounded-md px-2 py-1 text-[10px] text-fg-secondary flex items-center gap-1 gantt-print-toolbar"
+            title="Print / Export PDF"
           >
-            −
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            Print
           </button>
-          <button
-            onClick={() => canZoomIn && setZoom(ZOOM_LEVELS[zoomIdx + 1])}
-            disabled={!canZoomIn}
-            className="btn-raised rounded-md w-7 h-7 flex items-center justify-center text-fg-secondary disabled:opacity-30 text-sm font-bold"
-            title="Zoom in"
-          >
-            +
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => canZoomOut && setZoom(ZOOM_LEVELS[zoomIdx - 1])}
+              disabled={!canZoomOut}
+              className="btn-raised rounded-md w-7 h-7 flex items-center justify-center text-fg-secondary disabled:opacity-30 text-sm font-bold"
+              title="Zoom out"
+            >
+              −
+            </button>
+            <button
+              onClick={() => canZoomIn && setZoom(ZOOM_LEVELS[zoomIdx + 1])}
+              disabled={!canZoomIn}
+              className="btn-raised rounded-md w-7 h-7 flex items-center justify-center text-fg-secondary disabled:opacity-30 text-sm font-bold"
+              title="Zoom in"
+            >
+              +
+            </button>
+          </div>
         </div>
       </div>
 
       <div
         ref={scrollRef}
-        className="overflow-x-auto"
+        className="overflow-x-auto gantt-print-container"
         style={{ cursor: panning ? 'grabbing' : undefined }}
       >
         <table className="w-full border-collapse" style={{ tableLayout: 'fixed', minWidth: displayCols.length * minColW + 260 }}>
