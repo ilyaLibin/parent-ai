@@ -418,16 +418,19 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
 
   const displayCols = dragging ? frozenCols.current : columns;
 
-  // Keyboard shortcuts: [ zoom out, ] zoom in
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Keyboard shortcuts: [ zoom out, ] zoom in, Escape exits fullscreen
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'Escape' && fullscreen) { setFullscreen(false); return; }
       if (e.key === '[') { const i = ZOOM_LEVELS.indexOf(zoom); if (i > 0) setZoom(ZOOM_LEVELS[i - 1]); }
       if (e.key === ']') { const i = ZOOM_LEVELS.indexOf(zoom); if (i < ZOOM_LEVELS.length - 1) setZoom(ZOOM_LEVELS[i + 1]); }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [zoom]);
+  }, [zoom, fullscreen]);
 
   const todayColIdx = useMemo(() => {
     const now = Date.now();
@@ -498,12 +501,10 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   const minColW = colMinWidth(zoom);
 
   return (
-    <div className="card-raised rounded-xl overflow-hidden">
+    <div className={fullscreen ? 'fixed inset-0 z-50 bg-surface flex flex-col overflow-hidden' : 'card-raised rounded-xl overflow-hidden'}>
       {/* Zoom controls */}
       <div className="gantt-print-toolbar flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-hover/20">
         <div className="flex items-center gap-3">
-          <span className="text-xs text-fg-muted uppercase tracking-wider font-semibold">{zoom === '3day' ? '3-Day' : zoom}</span>
-
           {/* Filters */}
           <div className="flex items-center gap-2 ml-2 gantt-print-toolbar">
             <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Filter</span>
@@ -550,6 +551,19 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setFullscreen(!fullscreen)}
+            className="btn-raised rounded-md px-2 py-1 text-[10px] text-fg-secondary flex items-center gap-1 gantt-print-toolbar"
+            title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {fullscreen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9L4 4m0 0h5M4 4v5m11-1l5-5m0 0h-5m5 0v5M9 15l-5 5m0 0h5m-5 0v-5m11 1l5 5m0 0h-5m5 0v-5" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 0l-5 5" />
+              )}
+            </svg>
+          </button>
+          <button
             onClick={() => window.print()}
             className="btn-raised rounded-md px-2 py-1 text-[10px] text-fg-secondary flex items-center gap-1 gantt-print-toolbar"
             title="Print / Export PDF"
@@ -568,6 +582,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
             >
               −
             </button>
+            <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold w-10 text-center">{zoom === '3day' ? '3d' : zoom}</span>
             <button
               onClick={() => canZoomIn && setZoom(ZOOM_LEVELS[zoomIdx + 1])}
               disabled={!canZoomIn}
@@ -582,7 +597,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
 
       <div
         ref={scrollRef}
-        className="overflow-x-auto gantt-print-container"
+        className={`overflow-x-auto gantt-print-container ${fullscreen ? 'flex-1 overflow-y-auto' : ''}`}
         style={{ cursor: panning ? 'grabbing' : undefined }}
       >
         <table className="w-full border-collapse" style={{ tableLayout: 'fixed', minWidth: displayCols.length * minColW + 260 }}>
