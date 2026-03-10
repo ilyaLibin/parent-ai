@@ -74,8 +74,10 @@ export function JobModal({ job, onClose, onDelete }: Props) {
   const [showAddWorker, setShowAddWorker] = useState(false);
   const [newWorkerName, setNewWorkerName] = useState('');
   const [newWorkerPhone, setNewWorkerPhone] = useState('');
+  const [newWorkerPrice, setNewWorkerPrice] = useState('');
+  const [newWorkerNotes, setNewWorkerNotes] = useState('');
   const [editingWorkerId, setEditingWorkerId] = useState<number | null>(null);
-  const [editPrice, setEditPrice] = useState('');
+  const [editWorkerForm, setEditWorkerForm] = useState<{ name: string; phone: string; notes: string; price: string }>({ name: '', phone: '', notes: '', price: '' });
   const [dragWorker, setDragWorker] = useState<number | null>(null);
   const [addWorkerStage, setAddWorkerStage] = useState<string>('contact');
   const [dragPhaseId, setDragPhaseId] = useState<number | null>(null);
@@ -153,10 +155,12 @@ export function JobModal({ job, onClose, onDelete }: Props) {
     await fetch(`/api/renovation/jobs/${job.id}/workers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newWorkerName, phone: newWorkerPhone || null, stage: addWorkerStage }),
+      body: JSON.stringify({ name: newWorkerName, phone: newWorkerPhone || null, offer_price: parseFloat(newWorkerPrice) || null, notes: newWorkerNotes || null, stage: addWorkerStage }),
     });
     setNewWorkerName('');
     setNewWorkerPhone('');
+    setNewWorkerPrice('');
+    setNewWorkerNotes('');
     setShowAddWorker(false);
     fetchWorkers();
   };
@@ -170,14 +174,19 @@ export function JobModal({ job, onClose, onDelete }: Props) {
     fetchWorkers();
   };
 
-  const handleUpdatePrice = async (workerId: number) => {
+  const handleUpdateWorker = async (workerId: number) => {
     await fetch(`/api/renovation/workers/${workerId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ offer_price: parseFloat(editPrice) || null }),
+      body: JSON.stringify({
+        name: editWorkerForm.name.trim() || undefined,
+        phone: editWorkerForm.phone.trim() || null,
+        notes: editWorkerForm.notes.trim() || null,
+        offer_price: parseFloat(editWorkerForm.price) || null,
+      }),
     });
     setEditingWorkerId(null);
-    setEditPrice('');
+    setEditWorkerForm({ name: '', phone: '', notes: '', price: '' });
     fetchWorkers();
   };
 
@@ -333,32 +342,58 @@ export function JobModal({ job, onClose, onDelete }: Props) {
 
               {/* Add worker form */}
               {showAddWorker && (
-                <div className="card-raised rounded-lg p-3 mb-3 flex gap-2 items-end">
-                  <div className="flex-1">
-                    <label className="text-[10px] text-fg-muted mb-0.5 block">Name</label>
-                    <input
-                      value={newWorkerName}
-                      onChange={e => setNewWorkerName(e.target.value)}
-                      className="input-inset w-full rounded px-2 py-1.5 text-xs font-content"
-                      placeholder="Worker name"
-                      dir="auto"
-                      autoFocus
-                      onKeyDown={e => { if (e.key === 'Enter') handleAddWorker(); if (e.key === 'Escape') { setShowAddWorker(false); setNewWorkerName(''); setNewWorkerPhone(''); } }}
-                    />
+                <div className="card-raised rounded-lg p-3 mb-3 space-y-2">
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-fg-muted mb-0.5 block">Name</label>
+                      <input
+                        value={newWorkerName}
+                        onChange={e => setNewWorkerName(e.target.value)}
+                        className="input-inset w-full rounded px-2 py-1.5 text-xs font-content"
+                        placeholder="Worker name"
+                        dir="auto"
+                        autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddWorker(); if (e.key === 'Escape') { setShowAddWorker(false); setNewWorkerName(''); setNewWorkerPhone(''); setNewWorkerPrice(''); setNewWorkerNotes(''); } }}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-fg-muted mb-0.5 block">Phone</label>
+                      <input
+                        value={newWorkerPhone}
+                        onChange={e => setNewWorkerPhone(e.target.value)}
+                        className="input-inset w-full rounded px-2 py-1.5 text-xs font-content"
+                        placeholder="Phone number"
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddWorker(); if (e.key === 'Escape') { setShowAddWorker(false); setNewWorkerName(''); setNewWorkerPhone(''); setNewWorkerPrice(''); setNewWorkerNotes(''); } }}
+                      />
+                    </div>
+                    <div className="w-24 shrink-0">
+                      <label className="text-[10px] text-fg-muted mb-0.5 block">Price</label>
+                      <input
+                        value={newWorkerPrice}
+                        onChange={e => setNewWorkerPrice(e.target.value)}
+                        className="input-inset w-full rounded px-2 py-1.5 text-xs font-content"
+                        placeholder="Price"
+                        type="number"
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddWorker(); if (e.key === 'Escape') { setShowAddWorker(false); setNewWorkerName(''); setNewWorkerPhone(''); setNewWorkerPrice(''); setNewWorkerNotes(''); } }}
+                      />
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <label className="text-[10px] text-fg-muted mb-0.5 block">Phone</label>
-                    <input
-                      value={newWorkerPhone}
-                      onChange={e => setNewWorkerPhone(e.target.value)}
-                      className="input-inset w-full rounded px-2 py-1.5 text-xs font-content"
-                      placeholder="Phone number"
-                      onKeyDown={e => { if (e.key === 'Enter') handleAddWorker(); if (e.key === 'Escape') { setShowAddWorker(false); setNewWorkerName(''); setNewWorkerPhone(''); } }}
-                    />
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-fg-muted mb-0.5 block">Notes</label>
+                      <input
+                        value={newWorkerNotes}
+                        onChange={e => setNewWorkerNotes(e.target.value)}
+                        className="input-inset w-full rounded px-2 py-1.5 text-xs font-content"
+                        placeholder="Notes"
+                        dir="auto"
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddWorker(); if (e.key === 'Escape') { setShowAddWorker(false); setNewWorkerName(''); setNewWorkerPhone(''); setNewWorkerPrice(''); setNewWorkerNotes(''); } }}
+                      />
+                    </div>
+                    <button onClick={handleAddWorker} className="btn-accent rounded px-3 py-1.5 text-xs shrink-0">
+                      Add
+                    </button>
                   </div>
-                  <button onClick={handleAddWorker} className="btn-accent rounded px-3 py-1.5 text-xs shrink-0">
-                    Add
-                  </button>
                 </div>
               )}
 
@@ -393,64 +428,124 @@ export function JobModal({ job, onClose, onDelete }: Props) {
                         {stageWorkers.map(w => (
                           <div
                             key={w.id}
-                            draggable
+                            draggable={editingWorkerId !== w.id}
                             onDragStart={() => setDragWorker(w.id)}
                             onDragEnd={() => setDragWorker(null)}
-                            className={`group/card bg-surface-secondary rounded-md border border-border p-2 cursor-grab active:cursor-grabbing text-xs transition-shadow hover:shadow-md ${
-                              dragWorker === w.id ? 'opacity-50' : ''
-                            }`}
+                            className={`group/card bg-surface-secondary rounded-md border border-border p-2 text-xs transition-shadow hover:shadow-md ${
+                              editingWorkerId !== w.id ? 'cursor-grab active:cursor-grabbing' : ''
+                            } ${dragWorker === w.id ? 'opacity-50' : ''}`}
                           >
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-medium text-fg truncate font-content" dir="auto">{w.name}</span>
-                              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity">
-                                <button
-                                  onClick={() => { setEditingWorkerId(w.id); setEditPrice(String(w.offer_price ?? '')); }}
-                                  className="text-fg-muted hover:text-accent p-0.5 rounded"
-                                  title="Edit price"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteWorker(w.id)}
-                                  className="text-fg-muted hover:text-error p-0.5 rounded"
-                                  title="Remove"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                            {w.phone && (
-                              <a href={`tel:${w.phone}`} className="text-accent text-[10px] hover:underline block truncate font-content">
-                                {w.phone}
-                              </a>
-                            )}
-                            {/* Price display/edit */}
                             {editingWorkerId === w.id ? (
-                              <div className="flex gap-1 mt-1">
+                              /* ── Edit mode ── */
+                              <div className="space-y-1.5">
                                 <input
-                                  value={editPrice}
-                                  onChange={e => setEditPrice(e.target.value)}
-                                  className="input-inset w-full rounded px-1.5 py-0.5 text-[10px] font-content"
-                                  placeholder="Price"
-                                  type="number"
+                                  value={editWorkerForm.name}
+                                  onChange={e => setEditWorkerForm(f => ({ ...f, name: e.target.value }))}
+                                  className="input-inset w-full rounded px-1.5 py-1 text-[11px] font-content"
+                                  placeholder="Name"
+                                  dir="auto"
                                   autoFocus
                                   onKeyDown={e => {
-                                    if (e.key === 'Enter') handleUpdatePrice(w.id);
-                                    if (e.key === 'Escape') { setEditingWorkerId(null); setEditPrice(''); }
+                                    if (e.key === 'Enter') handleUpdateWorker(w.id);
+                                    if (e.key === 'Escape') { setEditingWorkerId(null); }
                                   }}
-                                  onBlur={() => handleUpdatePrice(w.id)}
                                 />
+                                <input
+                                  value={editWorkerForm.phone}
+                                  onChange={e => setEditWorkerForm(f => ({ ...f, phone: e.target.value }))}
+                                  className="input-inset w-full rounded px-1.5 py-1 text-[11px] font-content"
+                                  placeholder="Phone"
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleUpdateWorker(w.id);
+                                    if (e.key === 'Escape') { setEditingWorkerId(null); }
+                                  }}
+                                />
+                                <input
+                                  value={editWorkerForm.price}
+                                  onChange={e => setEditWorkerForm(f => ({ ...f, price: e.target.value }))}
+                                  className="input-inset w-full rounded px-1.5 py-1 text-[11px] font-content"
+                                  placeholder="Price"
+                                  type="number"
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') handleUpdateWorker(w.id);
+                                    if (e.key === 'Escape') { setEditingWorkerId(null); }
+                                  }}
+                                />
+                                <textarea
+                                  value={editWorkerForm.notes}
+                                  onChange={e => setEditWorkerForm(f => ({ ...f, notes: e.target.value }))}
+                                  className="input-inset w-full rounded px-1.5 py-1 text-[11px] font-content min-h-[40px] resize-y"
+                                  placeholder="Notes"
+                                  dir="auto"
+                                  onKeyDown={e => {
+                                    if (e.key === 'Escape') { setEditingWorkerId(null); }
+                                  }}
+                                />
+                                <div className="flex justify-end gap-1 pt-0.5">
+                                  <button
+                                    onClick={() => setEditingWorkerId(null)}
+                                    className="text-[10px] text-fg-muted hover:text-fg px-1.5 py-0.5 rounded"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={() => handleUpdateWorker(w.id)}
+                                    className="text-[10px] text-white bg-accent hover:bg-accent/80 px-2 py-0.5 rounded"
+                                  >
+                                    Save
+                                  </button>
+                                </div>
                               </div>
                             ) : (
-                              w.offer_price != null && (
-                                <div className="mt-1 text-[10px] text-fg-muted font-content">
-                                  {'\u20AA'}{w.offer_price.toLocaleString()}
+                              /* ── Display mode ── */
+                              <>
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="font-medium text-fg truncate font-content" dir="auto">{w.name}</span>
+                                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => {
+                                        setEditingWorkerId(w.id);
+                                        setEditWorkerForm({
+                                          name: w.name,
+                                          phone: w.phone ?? '',
+                                          notes: w.notes ?? '',
+                                          price: String(w.offer_price ?? ''),
+                                        });
+                                      }}
+                                      className="text-fg-muted hover:text-accent p-0.5 rounded"
+                                      title="Edit"
+                                    >
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteWorker(w.id)}
+                                      className="text-fg-muted hover:text-error p-0.5 rounded"
+                                      title="Remove"
+                                    >
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    </button>
+                                  </div>
                                 </div>
-                              )
+                                {w.phone && (
+                                  <a href={`tel:${w.phone}`} className="text-accent text-[10px] hover:underline block truncate font-content">
+                                    {w.phone}
+                                  </a>
+                                )}
+                                {w.offer_price != null && (
+                                  <div className="mt-1 text-[10px] text-fg-muted font-content">
+                                    {'\u20AA'}{w.offer_price.toLocaleString()}
+                                  </div>
+                                )}
+                                {w.notes && (
+                                  <div className="mt-1 text-[10px] text-fg-muted/70 font-content line-clamp-2" dir="auto">
+                                    {w.notes}
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         ))}

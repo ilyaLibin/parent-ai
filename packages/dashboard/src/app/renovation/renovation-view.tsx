@@ -94,6 +94,20 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
     setSavingSettings(false);
   };
 
+  // Filters
+  const [filters, setFilters] = useState<Set<string>>(new Set());
+  const toggleFilter = (f: string) => setFilters(prev => {
+    const next = new Set(prev);
+    if (next.has(f)) next.delete(f); else next.add(f);
+    return next;
+  });
+
+  const filteredJobs = jobs.filter(j => {
+    if (filters.has('no-contacts') && j.worker_count > 0) return false;
+    if (filters.has('no-assigned') && j.has_accepted_worker) return false;
+    return true;
+  });
+
   // Stats
   const totalTasks = jobs.length;
   const assigned = jobs.filter(j => deriveStatus(j) === 'assigned').length;
@@ -204,7 +218,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
 
       {/* Gantt — full width */}
       <GanttChart
-        jobs={jobs}
+        jobs={filteredJobs}
         phases={phases}
         projectStart={settings.project_start}
         projectEnd={settings.project_end}
@@ -214,11 +228,18 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
         onPhaseDatesChange={handlePhaseDatesChange}
         onReorderJobs={handleReorderJobs}
         onAddJob={handleOpenNew}
+        filters={filters}
+        onToggleFilter={toggleFilter}
+        onClearFilters={() => setFilters(new Set())}
+        totalJobCount={jobs.length}
       />
 
-      {jobs.length === 0 && (
+      {filteredJobs.length === 0 && (
         <div className="text-center py-16 text-fg-muted text-sm" data-print-hide>
-          No renovation jobs yet. Click <strong>+ Add Job</strong> to get started.
+          {jobs.length === 0
+            ? <>No renovation jobs yet. Click <strong>+ Add Job</strong> to get started.</>
+            : <>No jobs match the current filters.</>
+          }
         </div>
       )}
 

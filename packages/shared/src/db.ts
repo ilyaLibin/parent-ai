@@ -923,6 +923,9 @@ export interface RenovationJobWithWorker extends RenovationJob {
   accepted_worker_name: string | null;
   accepted_worker_price: number | null;
   worker_count: number;
+  contact_count: number;
+  contacted_count: number;
+  offer_count: number;
   has_accepted_worker: boolean;
   max_worker_stage: string | null;
 }
@@ -956,11 +959,14 @@ export function getRenovationJobs(): RenovationJobWithWorker[] {
     SELECT j.*,
       aw.name as accepted_worker_name,
       aw.offer_price as accepted_worker_price,
-      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id) as worker_count
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id) as worker_count,
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id AND stage = 'contact') as contact_count,
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id AND stage = 'contacted') as contacted_count,
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id AND stage = 'offer') as offer_count
     FROM renovation_jobs j
     LEFT JOIN renovation_workers aw ON aw.job_id = j.id AND aw.stage = 'accepted'
     ORDER BY j.sort_order ASC, j.start_date ASC
-  `).all() as (RenovationJob & { accepted_worker_name: string | null; accepted_worker_price: number | null; worker_count: number })[];
+  `).all() as (RenovationJob & { accepted_worker_name: string | null; accepted_worker_price: number | null; worker_count: number; contact_count: number; contacted_count: number; offer_count: number })[];
 
   // Get max stage per job
   const stageRows = db.prepare('SELECT job_id, stage FROM renovation_workers').all() as { job_id: number; stage: string }[];
@@ -982,11 +988,14 @@ export function getRenovationJob(id: number): RenovationJobWithWorker | undefine
     SELECT j.*,
       aw.name as accepted_worker_name,
       aw.offer_price as accepted_worker_price,
-      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id) as worker_count
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id) as worker_count,
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id AND stage = 'contact') as contact_count,
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id AND stage = 'contacted') as contacted_count,
+      (SELECT COUNT(*) FROM renovation_workers WHERE job_id = j.id AND stage = 'offer') as offer_count
     FROM renovation_jobs j
     LEFT JOIN renovation_workers aw ON aw.job_id = j.id AND aw.stage = 'accepted'
     WHERE j.id = ?
-  `).get(id) as (RenovationJob & { accepted_worker_name: string | null; accepted_worker_price: number | null; worker_count: number }) | undefined;
+  `).get(id) as (RenovationJob & { accepted_worker_name: string | null; accepted_worker_price: number | null; worker_count: number; contact_count: number; contacted_count: number; offer_count: number }) | undefined;
   if (!row) return undefined;
   const stages = db.prepare('SELECT stage FROM renovation_workers WHERE job_id = ?').all(id) as { stage: string }[];
   return { ...row, has_accepted_worker: row.accepted_worker_name !== null, max_worker_stage: deriveMaxStage(stages) };

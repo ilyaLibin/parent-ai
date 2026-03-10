@@ -16,6 +16,9 @@ export interface RenovationJob {
   accepted_worker_name: string | null;
   accepted_worker_price: number | null;
   worker_count: number;
+  contact_count: number;
+  contacted_count: number;
+  offer_count: number;
   has_accepted_worker: boolean;
   max_worker_stage: string | null;
   created_at: number;

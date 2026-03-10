@@ -18,6 +18,10 @@ interface Props {
   onPhaseDatesChange: (phaseId: number, start: string, end: string) => void;
   onReorderJobs: (orderedIds: number[]) => void;
   onAddJob: () => void;
+  filters: Set<string>;
+  onToggleFilter: (f: string) => void;
+  onClearFilters: () => void;
+  totalJobCount: number;
 }
 
 // ── helpers ──
@@ -322,7 +326,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
 
 // ── component ──
 
-export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob }: Props) {
+export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
   const [zoom, setZoom] = useState<ZoomLevel>('week');
   const [labelPosition, setLabelPosition] = useState<LabelPosition>('inside');
   const zoomIdx = ZOOM_LEVELS.indexOf(zoom);
@@ -499,6 +503,36 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
       <div className="gantt-print-toolbar flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-hover/20">
         <div className="flex items-center gap-3">
           <span className="text-xs text-fg-muted uppercase tracking-wider font-semibold">{zoom === '3day' ? '3-Day' : zoom}</span>
+
+          {/* Filters */}
+          <div className="flex items-center gap-2 ml-2 gantt-print-toolbar">
+            <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Filter</span>
+            {[
+              { key: 'no-contacts', label: 'No contacts' },
+              { key: 'no-assigned', label: 'No assigned' },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => onToggleFilter(f.key)}
+                className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors ${
+                  filters.has(f.key)
+                    ? 'bg-accent/15 border-accent text-accent'
+                    : 'bg-surface border-border-subtle text-fg-muted hover:text-fg-secondary hover:border-border'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+            {filters.size > 0 && (
+              <>
+                <span className="text-[10px] text-fg-muted">({jobs.length}/{totalJobCount})</span>
+                <button onClick={onClearFilters} className="text-[10px] text-fg-muted hover:text-fg">
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+
           <button
             onClick={() => setLabelPosition(labelPosition === 'outside' ? 'inside' : 'outside')}
             className="btn-raised rounded-md px-2 py-1 text-[10px] text-fg-secondary flex items-center gap-1"
@@ -633,6 +667,15 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                               {job.accepted_worker_name && <span>·</span>}
                               <span>{'\u20AA'}{job.accepted_worker_price.toLocaleString()}</span>
                             </>
+                          )}
+                          {!job.has_accepted_worker && job.worker_count > 0 && (
+                            <span className="text-fg-muted/70">
+                              {[
+                                job.contact_count > 0 && `${job.contact_count} contact`,
+                                job.contacted_count > 0 && `${job.contacted_count} contacted`,
+                                job.offer_count > 0 && `${job.offer_count} offer`,
+                              ].filter(Boolean).join(', ')}
+                            </span>
                           )}
                         </div>
                       </div>
