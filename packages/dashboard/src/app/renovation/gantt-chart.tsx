@@ -4,7 +4,6 @@ import { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } fr
 import type { RenovationJob, RenovationPhase } from './page';
 
 type ZoomLevel = 'month' | 'week' | '3day' | 'day';
-type LabelPosition = 'outside' | 'inside';
 const ZOOM_LEVELS: ZoomLevel[] = ['month', 'week', '3day', 'day'];
 
 interface Props {
@@ -58,6 +57,18 @@ function parseDate(s: string): Date {
 function daysBetween(a: string, b: string): number {
   const ms = parseDate(b).getTime() - parseDate(a).getTime();
   return Math.round(ms / 86400000);
+}
+
+function workDaysBetween(a: string, b: string): number {
+  let count = 0;
+  let cur = parseDate(a);
+  const end = parseDate(b);
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 5 && dow !== 6) count++; // exclude Fri/Sat
+    cur = addDays(cur, 1);
+  }
+  return count;
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -196,7 +207,7 @@ function buildColumns(zoom: ZoomLevel, rangeStart: Date, rangeEnd: Date): Column
         sublabel: DAY_NAMES[dow],
         start: new Date(cur),
         end: new Date(cur),
-        isWeekend: dow === 0 || dow === 6,
+        isWeekend: dow === 5 || dow === 6,
       });
       cur = addDays(cur, 1);
     }
@@ -258,7 +269,6 @@ interface BarProps {
   statusClasses?: { bg: string; border: string };
   isDragging: boolean;
   isActiveDrag: boolean;
-  labelPosition: LabelPosition;
   lane?: number;
   onMouseDownMove: (e: React.MouseEvent) => void;
   onMouseDownLeft: (e: React.MouseEvent) => void;
@@ -268,13 +278,13 @@ interface BarProps {
   onDoubleClick: () => void;
 }
 
-function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, labelPosition, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
+function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
   const [hover, setHover] = useState(false);
   const useCustomColor = !!color;
   const days = daysBetween(startDate, endDate);
   const isSingleDay = barPos.isSingleDay;
-  const showInside = labelPosition === 'inside' && !isSingleDay;
-  const topOffset = labelPosition === 'inside' ? 6 + lane * LANE_HEIGHT : 6;
+  const showInside = !isSingleDay;
+  const topOffset = 6 + lane * LANE_HEIGHT;
 
   return (
     <div
@@ -340,7 +350,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
             <span className="font-semibold text-fg font-content" dir="auto">{label}</span>
           </div>
           <div className="text-fg-muted font-content">
-            {fmtShort(startDate)}{startDate !== endDate && ` → ${fmtShort(endDate)}`} · {days === 0 ? '1 day' : `${days} day${days !== 1 ? 's' : ''}`}
+            {DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}{startDate !== endDate && ` → ${DAY_NAMES[parseDate(endDate).getDay()]} ${fmtShort(endDate)}`} · {days === 0 ? '1 day' : `${days} day${days !== 1 ? 's' : ''}`}{days > 1 && ` (${workDaysBetween(startDate, endDate)} work)`}
           </div>
         </div>
       )}
@@ -355,7 +365,6 @@ function RowTimeline({
   jobPhases,
   insideLaneInfo,
   columns,
-  labelPosition,
   dragging,
   activeDragKey,
   todayPos,
@@ -370,7 +379,6 @@ function RowTimeline({
   jobPhases: RenovationPhase[];
   insideLaneInfo: { assignments: LaneAssignment[]; laneCount: number } | undefined;
   columns: Column[];
-  labelPosition: LabelPosition;
   dragging: boolean;
   activeDragKey: string | null;
   todayPos: number | null;
@@ -415,11 +423,9 @@ function RowTimeline({
     const result = assignOutsideLabelLanes(items);
     setOutsideLanes(result.lanes);
     setOutsideLaneCount(result.laneCount);
-  }, [labelPosition, columns, measureKey, dragging]);
+  }, [columns, measureKey, dragging]);
 
-  const baseH = labelPosition === 'inside'
-    ? Math.max(56, insideLaneCount * LANE_HEIGHT + 12)
-    : 56;
+  const baseH = Math.max(56, insideLaneCount * LANE_HEIGHT + 12);
   const rowH = baseH + Math.max(0, outsideLaneCount - 1) * OUTSIDE_LABEL_LANE_H;
 
   const setRef = useCallback((el: HTMLDivElement | null) => {
@@ -462,7 +468,7 @@ function RowTimeline({
                 label={phase.name}
                 startDate={phase.start_date}
                 endDate={phase.end_date}
-                labelPosition={labelPosition}
+
                 lane={lane}
                 outsideLane={outsideLanes.get(key) || 0}
                 isDragging={dragging}
@@ -488,7 +494,7 @@ function RowTimeline({
                 startDate={job.start_date}
                 endDate={job.end_date}
                 statusClasses={!job.color ? colors : undefined}
-                labelPosition={labelPosition}
+
                 lane={0}
                 outsideLane={outsideLanes.get(key) || 0}
                 isDragging={dragging}
@@ -510,7 +516,6 @@ function RowTimeline({
 
 export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
   const [zoom, setZoom] = useState<ZoomLevel>('week');
-  const [labelPosition, setLabelPosition] = useState<LabelPosition>('inside');
   const zoomIdx = ZOOM_LEVELS.indexOf(zoom);
   const canZoomIn = zoomIdx < ZOOM_LEVELS.length - 1;
   const canZoomOut = zoomIdx > 0;
@@ -683,7 +688,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   const minColW = colMinWidth(zoom);
 
   return (
-    <div className={fullscreen ? 'fixed inset-0 z-50 bg-surface flex flex-col overflow-hidden' : 'card-raised rounded-xl overflow-hidden'}>
+    <div className={fullscreen ? 'fixed inset-0 z-50 bg-white flex flex-col overflow-hidden' : 'card-raised rounded-xl overflow-hidden'}>
       {/* Zoom controls */}
       <div className="gantt-print-toolbar flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-hover/20">
         <div className="flex items-center gap-3">
@@ -716,20 +721,6 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
             )}
           </div>
 
-          <button
-            onClick={() => setLabelPosition(labelPosition === 'outside' ? 'inside' : 'outside')}
-            className="btn-raised rounded-md px-2 py-1 text-[10px] text-fg-secondary flex items-center gap-1"
-            title={`Labels: ${labelPosition}`}
-          >
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {labelPosition === 'outside' ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h8m-8 6h16" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              )}
-            </svg>
-            {labelPosition === 'outside' ? 'Labels ↓' : 'Labels ←'}
-          </button>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -894,7 +885,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                     jobPhases={jobPhases}
                     insideLaneInfo={lanesByJob.get(job.id)}
                     columns={displayCols}
-                    labelPosition={labelPosition}
+    
                     dragging={dragging}
                     activeDragKey={activeDragKey}
                     todayPos={todayPos}
