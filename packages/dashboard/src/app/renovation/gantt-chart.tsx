@@ -94,7 +94,13 @@ interface LaneAssignment { phase: RenovationPhase; lane: number }
 
 function assignLanes(phases: RenovationPhase[]): { assignments: LaneAssignment[]; laneCount: number } {
   if (phases.length === 0) return { assignments: [], laneCount: 0 };
-  const sorted = [...phases].sort((a, b) => {
+
+  // Separate multi-day and single-day phases
+  const multiDay = phases.filter(p => p.start_date !== p.end_date);
+  const singleDay = phases.filter(p => p.start_date === p.end_date);
+
+  // Assign lanes for multi-day first
+  const sorted = [...multiDay].sort((a, b) => {
     const cmp = a.start_date.localeCompare(b.start_date);
     return cmp !== 0 ? cmp : a.end_date.localeCompare(b.end_date);
   });
@@ -109,7 +115,15 @@ function assignLanes(phases: RenovationPhase[]): { assignments: LaneAssignment[]
     else { laneEnds[lane] = phase.end_date; }
     assignments.push({ phase, lane });
   }
-  return { assignments, laneCount: laneEnds.length };
+
+  // Single-day phases go below all multi-day lanes
+  const multiLaneCount = laneEnds.length;
+  for (const phase of singleDay) {
+    assignments.push({ phase, lane: Math.max(multiLaneCount, 1) });
+  }
+
+  const totalLaneCount = singleDay.length > 0 ? Math.max(multiLaneCount, 1) + 1 : multiLaneCount;
+  return { assignments, laneCount: totalLaneCount };
 }
 
 const LANE_HEIGHT = 22; // bar height + gap per lane
