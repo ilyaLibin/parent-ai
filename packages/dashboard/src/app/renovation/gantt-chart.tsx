@@ -290,16 +290,18 @@ interface BarProps {
   statusClasses?: { bg: string; border: string };
   isDragging: boolean;
   isActiveDrag: boolean;
+  isSelected: boolean;
   lane?: number;
   onMouseDownMove: (e: React.MouseEvent) => void;
   onMouseDownLeft: (e: React.MouseEvent) => void;
   onMouseDownRight: (e: React.MouseEvent) => void;
+  onClick: (e: React.MouseEvent) => void;
   outsideLane?: number;
   barKey?: string;
   onDoubleClick: (e: React.MouseEvent) => void;
 }
 
-function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
+function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, isSelected, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onClick, onDoubleClick }: BarProps) {
   const [hover, setHover] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const useCustomColor = !!color;
@@ -318,17 +320,19 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
     >
       {isSingleDay ? (
         <div
-          className="w-3 h-3 rotate-45 rounded-sm border border-black/10 mx-auto"
+          className={`w-3 h-3 rotate-45 rounded-sm mx-auto ${isSelected ? 'ring-2 ring-accent ring-offset-1' : 'border border-black/10'}`}
           style={{ cursor: isDragging ? 'grabbing' : 'grab', backgroundColor: color || '#9ca3af' }}
           onMouseDown={onMouseDownMove}
+          onClick={onClick}
           onDoubleClick={onDoubleClick}
         />
       ) : (
         <>
           <div
-            className={`h-[18px] rounded-md ${showInside ? 'flex items-center' : ''} overflow-hidden ${useCustomColor ? 'border border-black/10' : `${statusClasses?.bg || 'bg-gray-400/90'} border ${statusClasses?.border || 'border-gray-500'}`}`}
+            className={`h-[18px] rounded-md ${showInside ? 'flex items-center' : ''} overflow-hidden ${isSelected ? 'ring-2 ring-accent ring-offset-1' : ''} ${useCustomColor ? `border ${isSelected ? 'border-accent' : 'border-black/10'}` : `${statusClasses?.bg || 'bg-gray-400/90'} border ${isSelected ? 'border-accent' : statusClasses?.border || 'border-gray-500'}`}`}
             style={{ cursor: isDragging ? 'grabbing' : 'grab', ...(useCustomColor ? { backgroundColor: color } : {}) }}
             onMouseDown={onMouseDownMove}
+            onClick={onClick}
             onDoubleClick={onDoubleClick}
           >
             {showInside && (
@@ -355,7 +359,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
         <div className="flex flex-col items-start" style={{ marginLeft: isSingleDay ? 5 : 0 }}>
           <div className="w-px bg-fg-muted/40" style={{ height: 8 + outsideLane * OUTSIDE_LABEL_LANE_H }} />
           <div data-label-key={barKey} className="flex items-baseline gap-1.5">
-            <span className="text-[10px] text-fg-muted/60 font-content select-none whitespace-nowrap leading-tight">{fmtShort(startDate)}</span>
+            <span className="text-[10px] text-fg-muted/60 font-content select-none whitespace-nowrap leading-tight">{DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}</span>
             <span className="text-xs text-fg-secondary font-medium font-content select-none whitespace-nowrap leading-tight" dir="auto">
               {label}
             </span>
@@ -433,7 +437,6 @@ function SegmentDialog({ mode, x, y, initialName, initialDays, initialColor, onS
       style={{ left: x, top: y }}
     >
       <div className="flex items-center gap-2">
-        <span className="w-4 h-4 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: color }} />
         <input
           ref={inputRef}
           value={name}
@@ -443,10 +446,10 @@ function SegmentDialog({ mode, x, y, initialName, initialDays, initialColor, onS
           placeholder="Segment name"
           dir="auto"
         />
+        <span className="w-4 h-4 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: color }} />
       </div>
       {mode === 'create' && (
         <div className="flex items-center gap-2">
-          <label className="text-xs text-fg-muted w-10">Days</label>
           <input
             type="number"
             min={1}
@@ -455,6 +458,7 @@ function SegmentDialog({ mode, x, y, initialName, initialDays, initialColor, onS
             onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
             className="input-inset rounded-md px-2 py-1 text-sm font-content w-48"
           />
+          <label className="text-xs text-fg-muted">Days</label>
         </div>
       )}
       <div className="flex justify-between items-center">
@@ -493,6 +497,8 @@ function RowTimeline({
   onPanStart,
   onTimelineDblClick,
   onSegmentDblClick,
+  selectedPhaseId,
+  onSelectPhase,
   totalCols,
   timelineRef: parentTimelineRef,
   hoveredCol,
@@ -510,6 +516,8 @@ function RowTimeline({
   onPanStart: (e: React.MouseEvent) => void;
   onTimelineDblClick: (e: React.MouseEvent, job: RenovationJob) => void;
   onSegmentDblClick: (e: React.MouseEvent, phase: RenovationPhase) => void;
+  selectedPhaseId: number | null;
+  onSelectPhase: (id: number | null) => void;
   totalCols: number;
   timelineRef: React.MutableRefObject<HTMLDivElement | null>;
   hoveredCol: number | null;
@@ -599,9 +607,11 @@ function RowTimeline({
                 outsideLane={outsideLanes.get(key) || 0}
                 isDragging={dragging}
                 isActiveDrag={activeDragKey === key}
+                isSelected={selectedPhaseId === phase.id}
                 onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
                 onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
                 onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
+                onClick={e => { e.stopPropagation(); onSelectPhase(phase.id); }}
                 onDoubleClick={e => onSegmentDblClick(e, phase)}
               />
             );
@@ -625,9 +635,11 @@ function RowTimeline({
                 outsideLane={outsideLanes.get(key) || 0}
                 isDragging={dragging}
                 isActiveDrag={activeDragKey === `job-${job.id}`}
+                isSelected={false}
                 onMouseDownMove={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'move')}
                 onMouseDownLeft={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'left')}
                 onMouseDownRight={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'right')}
+                onClick={() => {}}
                 onDoubleClick={() => onJobClick(job)}
               />
             );
@@ -852,6 +864,27 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     if (idx !== hoveredColRef.current) { hoveredColRef.current = idx; setHoveredCol(idx); }
   }, [displayCols.length]);
   const onTimelineMouseLeave = useCallback(() => { hoveredColRef.current = null; setHoveredCol(null); }, []);
+
+  // ── phase selection ──
+  const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedPhaseId === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        onDeletePhase(selectedPhaseId);
+        setSelectedPhaseId(null);
+      }
+      if (e.key === 'Escape') setSelectedPhaseId(null);
+    };
+    const onClick = () => setSelectedPhaseId(null);
+    document.addEventListener('keydown', onKey);
+    // Delay so the click that selected doesn't immediately deselect
+    const timer = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
+    return () => { document.removeEventListener('keydown', onKey); clearTimeout(timer); document.removeEventListener('mousedown', onClick); };
+  }, [selectedPhaseId, onDeletePhase]);
 
   // ── segment dialog ──
   const [segDialog, setSegDialog] = useState<SegmentDialogState | null>(null);
@@ -1121,6 +1154,8 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                     onPanStart={onPanStart}
                     onTimelineDblClick={handleTimelineDblClick}
                     onSegmentDblClick={handleSegmentDblClick}
+                    selectedPhaseId={selectedPhaseId}
+                    onSelectPhase={setSelectedPhaseId}
                     totalCols={totalCols}
                     timelineRef={timelineRef}
                     hoveredCol={hoveredCol}
