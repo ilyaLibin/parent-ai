@@ -789,17 +789,18 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     return displayCols.findIndex(c => now >= c.start.getTime() && now <= c.end.getTime() + 86400000 - 1);
   }, [displayCols]);
 
-  // ── pan drag (on empty timeline areas) ──
+  // ── pan drag (on empty timeline areas) with momentum ──
   const scrollRef = useRef<HTMLDivElement>(null);
-  const panInfo = useRef<{ startX: number; scrollLeft: number } | null>(null);
+  const panInfo = useRef<{ startX: number; scrollLeft: number; lastX: number; lastTime: number; velocity: number } | null>(null);
+  const momentumRef = useRef<number>(0);
   const [panning, setPanning] = useState(false);
 
   const onPanStart = useCallback((e: React.MouseEvent) => {
-    // Only start pan if clicking on the timeline background (not on a bar)
     if ((e.target as HTMLElement).closest('.group\\/bar')) return;
     if (!scrollRef.current) return;
     e.preventDefault();
-    panInfo.current = { startX: e.clientX, scrollLeft: scrollRef.current.scrollLeft };
+    cancelAnimationFrame(momentumRef.current);
+    panInfo.current = { startX: e.clientX, scrollLeft: scrollRef.current.scrollLeft, lastX: e.clientX, lastTime: Date.now(), velocity: 0 };
     setPanning(true);
   }, []);
 
@@ -808,10 +809,31 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     const onMove = (e: MouseEvent) => {
       const p = panInfo.current;
       if (!p || !scrollRef.current) return;
-      const dx = e.clientX - p.startX;
-      scrollRef.current.scrollLeft = p.scrollLeft - dx;
+      const now = Date.now();
+      const dt = now - p.lastTime;
+      if (dt > 0) p.velocity = (p.lastX - e.clientX) / dt;
+      p.lastX = e.clientX;
+      p.lastTime = now;
+      scrollRef.current.scrollLeft = p.scrollLeft - (e.clientX - p.startX);
     };
-    const onUp = () => { panInfo.current = null; setPanning(false); };
+    const onUp = () => {
+      const v = panInfo.current?.velocity || 0;
+      panInfo.current = null;
+      setPanning(false);
+      // Momentum coast
+      if (Math.abs(v) > 0.1 && scrollRef.current) {
+        let velocity = v * 16; // scale to px/frame
+        const decay = 0.95;
+        const el = scrollRef.current;
+        const animate = () => {
+          velocity *= decay;
+          if (Math.abs(velocity) < 0.5) return;
+          el.scrollLeft += velocity;
+          momentumRef.current = requestAnimationFrame(animate);
+        };
+        momentumRef.current = requestAnimationFrame(animate);
+      }
+    };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
     return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
