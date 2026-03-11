@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { RenovationJob, RenovationWorker, RenovationPhase } from './page';
+import { nameToColor } from './utils';
 
 const STAGES = ['contact', 'contacted', 'offer', 'accepted'] as const;
 const STAGE_LABELS: Record<string, string> = {
@@ -11,17 +12,6 @@ const STAGE_LABELS: Record<string, string> = {
   accepted: 'Accepted',
 };
 const PRESET_COLORS = ['#4f46e5', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280'];
-
-function nameToColor(name: string): string {
-  if (!name.trim()) return PRESET_COLORS[0];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    hash |= 0;
-  }
-  const h = ((hash % 360) + 360) % 360;
-  return `hsl(${h}, 65%, 50%)`;
-}
 
 interface Props {
   job: RenovationJob | null;

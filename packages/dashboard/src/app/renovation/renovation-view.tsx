@@ -61,6 +61,35 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
     debouncedFetch(`phase-${phaseId}`, `/api/renovation/phases/${phaseId}`, { start_date, end_date });
   };
 
+  const handleCreatePhase = async (jobId: number, name: string, startDate: string, endDate: string, color: string) => {
+    const res = await fetch(`/api/renovation/jobs/${jobId}/phases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, start_date: startDate, end_date: endDate, color, sort_order: 0 }),
+    });
+    if (res.ok) {
+      const phase = await res.json();
+      setPhases(prev => [...prev, phase]);
+    }
+  };
+
+  const handleUpdatePhase = async (phaseId: number, updates: { name?: string; color?: string }) => {
+    const res = await fetch(`/api/renovation/phases/${phaseId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setPhases(prev => prev.map(p => p.id === phaseId ? { ...p, ...updated } : p));
+    }
+  };
+
+  const handleDeletePhase = async (phaseId: number) => {
+    await fetch(`/api/renovation/phases/${phaseId}`, { method: 'DELETE' });
+    setPhases(prev => prev.filter(p => p.id !== phaseId));
+  };
+
   const handleReorderJobs = async (orderedIds: number[]) => {
     // Optimistic reorder
     const jobMap = new Map(jobs.map(j => [j.id, j]));
@@ -230,6 +259,9 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
         onPhaseDatesChange={handlePhaseDatesChange}
         onReorderJobs={handleReorderJobs}
         onAddJob={handleOpenNew}
+        onCreatePhase={handleCreatePhase}
+        onUpdatePhase={handleUpdatePhase}
+        onDeletePhase={handleDeletePhase}
         filters={filters}
         onToggleFilter={toggleFilter}
         onClearFilters={() => setFilters(new Set())}

@@ -3,6 +3,7 @@
 import { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { RenovationJob, RenovationPhase } from './page';
+import { nameToColor } from './utils';
 
 type ZoomLevel = 'month' | 'week' | '3day' | 'day';
 const ZOOM_LEVELS: ZoomLevel[] = ['month', 'week', '3day', 'day'];
@@ -18,6 +19,9 @@ interface Props {
   onPhaseDatesChange: (phaseId: number, start: string, end: string) => void;
   onReorderJobs: (orderedIds: number[]) => void;
   onAddJob: () => void;
+  onCreatePhase: (jobId: number, name: string, startDate: string, endDate: string, color: string) => void;
+  onUpdatePhase: (phaseId: number, updates: { name?: string; color?: string }) => void;
+  onDeletePhase: (phaseId: number) => void;
   filters: Set<string>;
   onToggleFilter: (f: string) => void;
   onClearFilters: () => void;
@@ -292,7 +296,7 @@ interface BarProps {
   onMouseDownRight: (e: React.MouseEvent) => void;
   outsideLane?: number;
   barKey?: string;
-  onDoubleClick: () => void;
+  onDoubleClick: (e: React.MouseEvent) => void;
 }
 
 function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
@@ -379,6 +383,100 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
   );
 }
 
+// ── segment dialog (inline popover for create/edit) ──
+
+interface SegmentDialogProps {
+  mode: 'create' | 'edit';
+  x: number;
+  y: number;
+  initialName: string;
+  initialDays: number;
+  initialColor: string;
+  onSubmit: (name: string, days: number, color: string) => void;
+  onDelete?: () => void;
+  onCancel: () => void;
+}
+
+function SegmentDialog({ mode, x, y, initialName, initialDays, initialColor, onSubmit, onDelete, onCancel }: SegmentDialogProps) {
+  const [name, setName] = useState(initialName);
+  const [days, setDays] = useState(initialDays > 0 ? initialDays : 1);
+  const [color, setColor] = useState(initialColor);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
+    const onClick = (e: MouseEvent) => { if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) onCancel(); };
+    document.addEventListener('keydown', onKey);
+    // Delay adding mousedown listener so the originating double-click doesn't immediately close it
+    const timer = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
+    return () => { clearTimeout(timer); document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick); };
+  }, [onCancel]);
+
+  const handleNameChange = (v: string) => {
+    setName(v);
+    setColor(nameToColor(v));
+  };
+
+  const handleSubmit = () => {
+    const trimmed = name.trim();
+    if (!trimmed && mode === 'edit') { onCancel(); return; }
+    onSubmit(trimmed || 'New segment', days, color);
+  };
+
+  return createPortal(
+    <div
+      ref={dialogRef}
+      className="fixed z-[9999] bg-surface-secondary border border-border rounded-lg shadow-xl p-3 space-y-2"
+      style={{ left: x, top: y }}
+    >
+      <div className="flex items-center gap-2">
+        <span className="w-4 h-4 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: color }} />
+        <input
+          ref={inputRef}
+          value={name}
+          onChange={e => handleNameChange(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+          className="input-inset rounded-md px-2 py-1 text-sm font-content w-48"
+          placeholder="Segment name"
+          dir="auto"
+        />
+      </div>
+      {mode === 'create' && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-fg-muted w-10">Days</label>
+          <input
+            type="number"
+            min={1}
+            value={days}
+            onChange={e => setDays(Math.max(1, parseInt(e.target.value) || 1))}
+            onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
+            className="input-inset rounded-md px-2 py-1 text-sm font-content w-48"
+          />
+        </div>
+      )}
+      <div className="flex justify-between items-center">
+        {mode === 'edit' && onDelete ? (
+          <button onClick={onDelete} className="text-xs text-error hover:text-error/80 transition-colors">
+            Delete
+          </button>
+        ) : <span />}
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="btn-raised rounded-md px-3 py-1 text-xs">
+            Cancel
+          </button>
+          <button onClick={handleSubmit} className="btn-accent rounded-md px-3 py-1 text-xs">
+            {mode === 'create' ? 'Add' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 // ── row timeline (handles outside label lane measurement) ──
 
 function RowTimeline({
@@ -393,6 +491,8 @@ function RowTimeline({
   onMouseDown,
   onJobClick,
   onPanStart,
+  onTimelineDblClick,
+  onSegmentDblClick,
   totalCols,
   timelineRef: parentTimelineRef,
   hoveredCol,
@@ -408,6 +508,8 @@ function RowTimeline({
   onMouseDown: (e: React.MouseEvent, type: 'job' | 'phase', id: number, start: string, end: string, edge: 'left' | 'right' | 'move') => void;
   onJobClick: (job: RenovationJob) => void;
   onPanStart: (e: React.MouseEvent) => void;
+  onTimelineDblClick: (e: React.MouseEvent, job: RenovationJob) => void;
+  onSegmentDblClick: (e: React.MouseEvent, phase: RenovationPhase) => void;
   totalCols: number;
   timelineRef: React.MutableRefObject<HTMLDivElement | null>;
   hoveredCol: number | null;
@@ -462,6 +564,7 @@ function RowTimeline({
       className="relative p-0"
       style={{ height: rowH }}
       onMouseDown={onPanStart}
+      onDoubleClick={e => onTimelineDblClick(e, job)}
     >
       <div ref={setRef} className="absolute inset-0">
         {/* Grid lines */}
@@ -499,7 +602,7 @@ function RowTimeline({
                 onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
                 onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
                 onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
-                onDoubleClick={() => onJobClick(job)}
+                onDoubleClick={e => onSegmentDblClick(e, phase)}
               />
             );
           })
@@ -535,9 +638,23 @@ function RowTimeline({
   );
 }
 
+// ── segment dialog state ──
+
+interface SegmentDialogState {
+  mode: 'create' | 'edit';
+  x: number;
+  y: number;
+  jobId: number;
+  phaseId?: number; // only for edit
+  date: string; // click date for create
+  initialName: string;
+  initialDays: number;
+  initialColor: string;
+}
+
 // ── component ──
 
-export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
+export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, onCreatePhase, onUpdatePhase, onDeletePhase, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
   const [zoom, setZoom] = useState<ZoomLevel>('week');
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
@@ -735,6 +852,65 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     if (idx !== hoveredColRef.current) { hoveredColRef.current = idx; setHoveredCol(idx); }
   }, [displayCols.length]);
   const onTimelineMouseLeave = useCallback(() => { hoveredColRef.current = null; setHoveredCol(null); }, []);
+
+  // ── segment dialog ──
+  const [segDialog, setSegDialog] = useState<SegmentDialogState | null>(null);
+
+  const handleTimelineDblClick = useCallback((e: React.MouseEvent, job: RenovationJob) => {
+    if ((e.target as HTMLElement).closest('.group\\/bar')) return;
+    if (!timelineRef.current || !displayCols.length) return;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const xRatio = (e.clientX - rect.left) / rect.width;
+    const DAY = 86400000;
+    const t0 = displayCols[0].start.getTime();
+    const t1 = displayCols[displayCols.length - 1].end.getTime() + DAY;
+    const clickTime = t0 + xRatio * (t1 - t0);
+    const clickDate = new Date(clickTime);
+    const dateStr = fmtDate(clickDate);
+
+    setSegDialog({
+      mode: 'create',
+      x: e.clientX,
+      y: e.clientY,
+      jobId: job.id,
+      date: dateStr,
+      initialName: '',
+      initialDays: 0,
+      initialColor: nameToColor(''),
+    });
+  }, [displayCols]);
+
+  const handleSegmentDblClick = useCallback((e: React.MouseEvent, phase: RenovationPhase) => {
+    setSegDialog({
+      mode: 'edit',
+      x: e.clientX,
+      y: e.clientY,
+      jobId: phase.job_id,
+      phaseId: phase.id,
+      date: phase.start_date,
+      initialName: phase.name,
+      initialDays: daysBetween(phase.start_date, phase.end_date) + 1,
+      initialColor: phase.color,
+    });
+  }, []);
+
+  const handleSegDialogSubmit = useCallback((name: string, days: number, color: string) => {
+    if (!segDialog) return;
+    if (segDialog.mode === 'create') {
+      const startDate = segDialog.date;
+      const endDate = days > 1 ? fmtDate(addDays(parseDate(startDate), days - 1)) : startDate;
+      onCreatePhase(segDialog.jobId, name, startDate, endDate, color);
+    } else if (segDialog.phaseId != null) {
+      onUpdatePhase(segDialog.phaseId, { name, color });
+    }
+    setSegDialog(null);
+  }, [segDialog, onCreatePhase, onUpdatePhase]);
+
+  const handleSegDialogDelete = useCallback(() => {
+    if (!segDialog || segDialog.mode !== 'edit' || segDialog.phaseId == null) return;
+    onDeletePhase(segDialog.phaseId);
+    setSegDialog(null);
+  }, [segDialog, onDeletePhase]);
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-50 bg-white flex flex-col overflow-hidden' : 'card-raised rounded-xl overflow-hidden'}>
@@ -936,7 +1112,6 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                     jobPhases={jobPhases}
                     insideLaneInfo={lanesByJob.get(job.id)}
                     columns={displayCols}
-    
                     dragging={dragging}
                     activeDragKey={activeDragKey}
                     todayPos={todayPos}
@@ -944,6 +1119,8 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                     onMouseDown={onMouseDown}
                     onJobClick={onJobClick}
                     onPanStart={onPanStart}
+                    onTimelineDblClick={handleTimelineDblClick}
+                    onSegmentDblClick={handleSegmentDblClick}
                     totalCols={totalCols}
                     timelineRef={timelineRef}
                     hoveredCol={hoveredCol}
@@ -967,6 +1144,21 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
           </tbody>
         </table>
       </div>
+
+      {/* Segment create/edit dialog */}
+      {segDialog && (
+        <SegmentDialog
+          mode={segDialog.mode}
+          x={segDialog.x}
+          y={segDialog.y}
+          initialName={segDialog.initialName}
+          initialDays={segDialog.initialDays}
+          initialColor={segDialog.initialColor}
+          onSubmit={handleSegDialogSubmit}
+          onDelete={segDialog.mode === 'edit' ? handleSegDialogDelete : undefined}
+          onCancel={() => setSegDialog(null)}
+        />
+      )}
     </div>
   );
 }
