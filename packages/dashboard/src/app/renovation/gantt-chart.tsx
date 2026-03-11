@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { RenovationJob, RenovationPhase } from './page';
 
 type ZoomLevel = 'month' | 'week' | '3day' | 'day';
@@ -294,6 +295,7 @@ interface BarProps {
 
 function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onDoubleClick }: BarProps) {
   const [hover, setHover] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
   const useCustomColor = !!color;
   const days = daysBetween(startDate, endDate);
   const isSingleDay = barPos.isSingleDay;
@@ -302,6 +304,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
 
   return (
     <div
+      ref={barRef}
       className="absolute group/bar"
       style={{ left: `${barPos.left}%`, width: isSingleDay ? 12 : `${barPos.width}%`, minWidth: isSingleDay ? 12 : 20, top: topOffset, zIndex: 5 }}
       onMouseEnter={() => setHover(true)}
@@ -354,10 +357,11 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
         </div>
       )}
 
-      {/* Tooltip on hover */}
-      {(hover || isActiveDrag) && (
-        <div className="absolute z-[100] pointer-events-none bg-surface-secondary border border-border rounded-lg shadow-lg px-3 py-2 text-xs whitespace-nowrap"
-          style={{ left: 0, bottom: '100%', marginBottom: 4 }}
+      {/* Tooltip on hover — portaled to body to escape table stacking contexts */}
+      {(hover || isActiveDrag) && barRef.current && createPortal(
+        <div
+          className="fixed z-[9999] pointer-events-none bg-surface-secondary border border-border rounded-lg shadow-lg px-3 py-2 text-xs whitespace-nowrap"
+          style={{ left: barRef.current.getBoundingClientRect().left, top: barRef.current.getBoundingClientRect().top - 4, transform: 'translateY(-100%)' }}
         >
           <div className="flex items-center gap-2 mb-1">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color || '#9ca3af' }} />
@@ -366,7 +370,8 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
           <div className="text-fg-muted font-content">
             {DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}{startDate !== endDate && ` → ${DAY_NAMES[parseDate(endDate).getDay()]} ${fmtShort(endDate)}`} · {days === 0 ? '1 day' : `${days} day${days !== 1 ? 's' : ''}`}{days > 1 && ` (${workDaysBetween(startDate, endDate)} work)`}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
