@@ -194,6 +194,30 @@ docker compose logs -f listener     # Watch listener logs
 - **Next.js** — Admin dashboard (App Router, Turbopack)
 - **cronstrue** + **cron-parser** — Human-readable cron descriptions + scheduling
 
+## Syncing Renovation Data to Remote (`brain.local`)
+
+The Mac Mini (`ilyalibin@brain.local`) runs the production services. To push local renovation tables to remote:
+
+```bash
+# 1. Stop remote API
+ssh ilyalibin@brain.local "cd ~/parent-ai && /usr/local/bin/docker compose stop api"
+
+# 2. Drop + recreate renovation tables from local (schema + data)
+ssh ilyalibin@brain.local "sqlite3 ~/parent-ai/data/messages.db 'DROP TABLE IF EXISTS renovation_workers; DROP TABLE IF EXISTS renovation_phases; DROP TABLE IF EXISTS renovation_jobs;'"
+sqlite3 data/messages.db ".dump renovation_jobs" ".dump renovation_workers" ".dump renovation_phases" \
+  | ssh ilyalibin@brain.local "sqlite3 ~/parent-ai/data/messages.db"
+
+# 3. Sync renovation settings
+ssh ilyalibin@brain.local "sqlite3 ~/parent-ai/data/messages.db \"DELETE FROM integrations WHERE type='renovation_settings';\""
+sqlite3 data/messages.db ".dump integrations" | grep "renovation_settings" \
+  | ssh ilyalibin@brain.local "sqlite3 ~/parent-ai/data/messages.db"
+
+# 4. Restart remote API
+ssh ilyalibin@brain.local "cd ~/parent-ai && /usr/local/bin/docker compose up -d api"
+```
+
+**Why drop+recreate:** Local and remote schemas can drift (migration order, ALTER TABLE column positions). `.dump` recreates with exact local schema, avoiding column order mismatches.
+
 ## Important Notes
 
 - `markOnlineOnConnect: false` is set in connection.ts — Baileys does NOT show you as online, phone notifications are preserved
