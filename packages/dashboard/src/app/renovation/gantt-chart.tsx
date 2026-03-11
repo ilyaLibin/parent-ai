@@ -395,6 +395,7 @@ function RowTimeline({
   onPanStart,
   totalCols,
   timelineRef: parentTimelineRef,
+  hoveredCol,
 }: {
   job: RenovationJob;
   jobPhases: RenovationPhase[];
@@ -409,6 +410,7 @@ function RowTimeline({
   onPanStart: (e: React.MouseEvent) => void;
   totalCols: number;
   timelineRef: React.MutableRefObject<HTMLDivElement | null>;
+  hoveredCol: number | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [outsideLanes, setOutsideLanes] = useState<Map<string, number>>(new Map());
@@ -465,7 +467,7 @@ function RowTimeline({
         {/* Grid lines */}
         <div className="absolute inset-0 flex pointer-events-none">
           {columns.map((col, i) => (
-            <div key={i} className={`flex-1 border-l border-border-subtle ${col.isWeekend ? 'bg-surface-hover/30' : ''}`} />
+            <div key={i} className={`flex-1 border-l border-border-subtle transition-colors duration-75 ${i === hoveredCol ? 'bg-black/[0.04]' : col.isWeekend ? 'bg-surface-hover/30' : ''}`} />
           ))}
         </div>
 
@@ -537,6 +539,15 @@ function RowTimeline({
 
 export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
   const [zoom, setZoom] = useState<ZoomLevel>('week');
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    const savedZoom = localStorage.getItem('gantt-zoom') as ZoomLevel;
+    if (savedZoom && ZOOM_LEVELS.includes(savedZoom)) setZoom(savedZoom);
+    const savedFs = localStorage.getItem('gantt-fullscreen') === 'true';
+    if (savedFs) setFullscreen(true);
+    setHydrated(true);
+  }, []);
+  useEffect(() => { if (hydrated) localStorage.setItem('gantt-zoom', zoom); }, [zoom, hydrated]);
   const zoomIdx = ZOOM_LEVELS.indexOf(zoom);
   const canZoomIn = zoomIdx < ZOOM_LEVELS.length - 1;
   const canZoomOut = zoomIdx > 0;
@@ -627,6 +638,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   const displayCols = dragging ? frozenCols.current : columns;
 
   const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => { if (hydrated) localStorage.setItem('gantt-fullscreen', String(fullscreen)); }, [fullscreen, hydrated]);
 
   // Keyboard shortcuts: [ zoom out, ] zoom in, Escape exits fullscreen
   useEffect(() => {
@@ -707,6 +719,22 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   }, [dragRowId, jobs]);
 
   const minColW = colMinWidth(zoom);
+
+  // ── column hover highlight ──
+  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
+  const hoveredColRef = useRef<number | null>(null);
+  const onTimelineMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!scrollRef.current) return;
+    const tableEl = scrollRef.current.querySelector('table');
+    if (!tableEl) return;
+    const tableRect = tableEl.getBoundingClientRect();
+    const x = e.clientX - tableRect.left - 260; // subtract sticky task column
+    if (x < 0) { if (hoveredColRef.current !== null) { hoveredColRef.current = null; setHoveredCol(null); } return; }
+    const colWidth = (tableRect.width - 260) / displayCols.length;
+    const idx = Math.min(Math.floor(x / colWidth), displayCols.length - 1);
+    if (idx !== hoveredColRef.current) { hoveredColRef.current = idx; setHoveredCol(idx); }
+  }, [displayCols.length]);
+  const onTimelineMouseLeave = useCallback(() => { hoveredColRef.current = null; setHoveredCol(null); }, []);
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-50 bg-white flex flex-col overflow-hidden' : 'card-raised rounded-xl overflow-hidden'}>
@@ -793,6 +821,8 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
         ref={scrollRef}
         className={`overflow-x-auto gantt-print-container ${fullscreen ? 'flex-1 overflow-y-auto' : ''}`}
         style={{ cursor: panning ? 'grabbing' : undefined }}
+        onMouseMove={onTimelineMouseMove}
+        onMouseLeave={onTimelineMouseLeave}
       >
         <table className="w-full border-collapse" style={{ tableLayout: 'fixed', minWidth: displayCols.length * minColW + 260 }}>
           <colgroup>
@@ -823,7 +853,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                 Task
               </th>
               {displayCols.map((col, i) => (
-                <th key={i} className={`text-center px-1 py-2 text-xs border-l border-border-subtle font-normal ${col.isWeekend ? 'bg-surface-hover/40' : ''}`}>
+                <th key={i} className={`text-center px-1 py-2 text-xs border-l border-border-subtle font-normal transition-colors duration-75 ${i === hoveredCol ? 'bg-black/[0.04]' : col.isWeekend ? 'bg-surface-hover/40' : ''}`}>
                   <div className={`font-semibold ${i === todayColIdx ? 'text-error' : 'text-fg-secondary'}`}>{col.label}</div>
                   {col.sublabel && <div className={`text-[10px] ${i === todayColIdx ? 'text-error/70' : 'text-fg-muted'}`}>{col.sublabel}</div>}
                 </th>
@@ -916,6 +946,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                     onPanStart={onPanStart}
                     totalCols={totalCols}
                     timelineRef={timelineRef}
+                    hoveredCol={hoveredCol}
                   />
                 </tr>
               );
