@@ -378,7 +378,10 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
             <span className="font-semibold text-fg font-content" dir="auto">{label}</span>
           </div>
           <div className="text-fg-muted font-content">
-            {DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}{startDate !== endDate && ` → ${DAY_NAMES[parseDate(endDate).getDay()]} ${fmtShort(endDate)}`} · {days + 1} day{days > 0 ? 's' : ''}{days > 0 && ` (${workDaysBetween(startDate, endDate)} work)`}
+            {DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}{startDate !== endDate && ` → ${DAY_NAMES[parseDate(endDate).getDay()]} ${fmtShort(endDate)}`}
+          </div>
+          <div className="text-fg-muted font-content">
+            {days + 1} day{days > 0 ? 's' : ''}{days > 0 && ` (${workDaysBetween(startDate, endDate)} work days)`}
           </div>
         </div>,
         document.body
