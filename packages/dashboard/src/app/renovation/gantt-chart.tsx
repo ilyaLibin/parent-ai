@@ -242,12 +242,13 @@ function buildMonthSpans(columns: Column[]): MonthSpan[] {
 
 function barPosition(start: string, end: string, columns: Column[]): { left: number; width: number; isSingleDay: boolean } | null {
   if (!columns.length) return null;
+  const DAY = 86400000;
   const t0 = columns[0].start.getTime();
-  const t1 = columns[columns.length - 1].end.getTime();
+  const t1 = columns[columns.length - 1].end.getTime() + DAY; // through end of last day
   const span = t1 - t0;
   if (span <= 0) return null;
   const s = Math.max(parseDate(start).getTime(), t0);
-  const e = Math.min(parseDate(end).getTime(), t1);
+  const e = Math.min(parseDate(end).getTime() + DAY, t1); // through end of end date
   if (s > e) return null;
   const isSingleDay = start === end;
   const rawWidth = ((e - s) / span) * 100;
@@ -256,8 +257,9 @@ function barPosition(start: string, end: string, columns: Column[]): { left: num
 
 function todayPosition(columns: Column[]): number | null {
   if (!columns.length) return null;
+  const DAY = 86400000;
   const t0 = columns[0].start.getTime();
-  const t1 = columns[columns.length - 1].end.getTime();
+  const t1 = columns[columns.length - 1].end.getTime() + DAY;
   const now = Date.now();
   if (now < t0 || now > t1) return null;
   return ((now - t0) / (t1 - t0)) * 100;
@@ -306,7 +308,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
     <div
       ref={barRef}
       className="absolute group/bar"
-      style={{ left: `${barPos.left}%`, width: isSingleDay ? 12 : `${barPos.width}%`, minWidth: isSingleDay ? 12 : 20, top: topOffset, zIndex: 5 }}
+      style={{ left: isSingleDay ? `${barPos.left}%` : `calc(${barPos.left}% + 4px)`, width: isSingleDay ? 12 : `calc(${barPos.width}% - 8px)`, minWidth: isSingleDay ? 12 : 20, top: topOffset, zIndex: 5 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -368,7 +370,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
             <span className="font-semibold text-fg font-content" dir="auto">{label}</span>
           </div>
           <div className="text-fg-muted font-content">
-            {DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}{startDate !== endDate && ` → ${DAY_NAMES[parseDate(endDate).getDay()]} ${fmtShort(endDate)}`} · {days === 0 ? '1 day' : `${days} day${days !== 1 ? 's' : ''}`}{days > 1 && ` (${workDaysBetween(startDate, endDate)} work)`}
+            {DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}{startDate !== endDate && ` → ${DAY_NAMES[parseDate(endDate).getDay()]} ${fmtShort(endDate)}`} · {days + 1} day{days > 0 ? 's' : ''}{days > 0 && ` (${workDaysBetween(startDate, endDate)} work)`}
           </div>
         </div>,
         document.body

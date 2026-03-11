@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { RenovationJob, RenovationPhase, RenovationSettings } from './page';
 import { GanttChart } from './gantt-chart';
 import { JobModal } from './job-modal';
@@ -40,23 +40,25 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
   const handleOpenNew = () => { setEditingJob(null); setModalOpen(true); };
   const handleOpenEdit = (job: RenovationJob) => { setEditingJob(job); setModalOpen(true); };
 
+  // Debounce API calls during drag — UI updates instantly, fetch fires after 300ms pause
+  const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const debouncedFetch = useCallback((key: string, url: string, body: object) => {
+    const existing = debounceTimers.current.get(key);
+    if (existing) clearTimeout(existing);
+    debounceTimers.current.set(key, setTimeout(async () => {
+      debounceTimers.current.delete(key);
+      await fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    }, 1000));
+  }, []);
+
   const handleJobDatesChange = async (id: number, start_date: string, end_date: string) => {
     setJobs(prev => prev.map(j => j.id === id ? { ...j, start_date, end_date } : j));
-    await fetch(`/api/renovation/jobs/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start_date, end_date }),
-    });
+    debouncedFetch(`job-${id}`, `/api/renovation/jobs/${id}`, { start_date, end_date });
   };
 
   const handlePhaseDatesChange = async (phaseId: number, start_date: string, end_date: string) => {
-    // Optimistic update for phases — don't re-fetch jobs during drag to avoid row reorder
     setPhases(prev => prev.map(p => p.id === phaseId ? { ...p, start_date, end_date } : p));
-    await fetch(`/api/renovation/phases/${phaseId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ start_date, end_date }),
-    });
+    debouncedFetch(`phase-${phaseId}`, `/api/renovation/phases/${phaseId}`, { start_date, end_date });
   };
 
   const handleReorderJobs = async (orderedIds: number[]) => {
