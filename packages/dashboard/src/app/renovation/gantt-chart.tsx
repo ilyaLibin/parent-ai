@@ -131,6 +131,7 @@ function assignLanes(phases: RenovationPhase[]): { assignments: LaneAssignment[]
   return { assignments, laneCount: totalLaneCount };
 }
 
+const TASK_COL_W = 220;
 const LANE_HEIGHT = 22; // bar height + gap per lane
 const LANE_BAR_H = 18;
 const OUTSIDE_LABEL_LANE_H = 18;
@@ -883,9 +884,9 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     const tableEl = scrollRef.current.querySelector('table');
     if (!tableEl) return;
     const tableRect = tableEl.getBoundingClientRect();
-    const x = e.clientX - tableRect.left - 260; // subtract sticky task column
+    const x = e.clientX - tableRect.left - TASK_COL_W; // subtract sticky task column
     if (x < 0) { if (hoveredColRef.current !== null) { hoveredColRef.current = null; setHoveredCol(null); } return; }
-    const colWidth = (tableRect.width - 260) / displayCols.length;
+    const colWidth = (tableRect.width - TASK_COL_W) / displayCols.length;
     const idx = Math.min(Math.floor(x / colWidth), displayCols.length - 1);
     if (idx !== hoveredColRef.current) { hoveredColRef.current = idx; setHoveredCol(idx); }
   }, [displayCols.length]);
@@ -977,7 +978,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
       <div className="gantt-print-toolbar flex items-center justify-between px-4 py-2 border-b border-border-subtle bg-surface-hover/20">
         <div className="flex items-center gap-3">
           {/* Filters */}
-          <div className="flex items-center gap-2 ml-2 gantt-print-toolbar">
+          <div className="hidden md:flex items-center gap-2 ml-2 gantt-print-toolbar">
             <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Filter</span>
             {[
               { key: 'no-contacts', label: 'No contacts' },
@@ -1029,7 +1030,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
               setExporting(false);
             }}
             disabled={exporting}
-            className="btn-raised rounded-md px-2 py-1 text-[10px] text-fg-secondary flex items-center gap-1 gantt-print-toolbar disabled:opacity-50"
+            className="hidden md:flex btn-raised rounded-md px-2 py-1 text-[10px] text-fg-secondary items-center gap-1 gantt-print-toolbar disabled:opacity-50"
             title="Export PDF"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1066,9 +1067,10 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
         onMouseMove={onTimelineMouseMove}
         onMouseLeave={onTimelineMouseLeave}
       >
-        <table className="w-full border-collapse" style={{ tableLayout: 'fixed', minWidth: displayCols.length * minColW + 260 }}>
+        <table className="w-full border-collapse" style={{ tableLayout: 'fixed', minWidth: displayCols.length * minColW }}>
           <colgroup>
-            <col style={{ width: 260 }} />
+            <col className="hidden md:table-column" style={{ width: TASK_COL_W }} />
+            <col className="md:hidden" style={{ width: 0 }} />
             {displayCols.map((_, i) => <col key={i} style={{ minWidth: minColW }} />)}
           </colgroup>
 
@@ -1076,7 +1078,8 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
             {/* Month strip */}
             {showMonthStrip && monthSpans.length > 0 && (
               <tr className="border-b border-border-subtle">
-                <th className="sticky left-0 z-20 bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none" />
+                <th className="hidden md:table-cell sticky left-0 z-20 bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none" />
+                <th className="md:hidden p-0" />
                 {monthSpans.map((span, i) => (
                   <th
                     key={i}
@@ -1091,9 +1094,10 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
 
             {/* Column headers */}
             <tr className="border-b border-border">
-              <th className="sticky left-0 z-20 bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none text-left px-4 py-3 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
+              <th className="hidden md:table-cell sticky left-0 z-20 bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none text-left px-4 py-3 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
                 Task
               </th>
+              <th className="md:hidden p-0" />
               {displayCols.map((col, i) => (
                 <th key={i} className={`text-center px-1 py-2 text-xs border-l border-border-subtle font-normal transition-colors duration-75 ${i === hoveredCol ? 'bg-black/[0.04]' : col.isWeekend ? 'bg-surface-hover/40' : ''}`}>
                   <div className={`font-semibold ${i === todayColIdx ? 'text-error' : 'text-fg-secondary'}`}>{col.label}</div>
@@ -1118,8 +1122,8 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                   onDragLeave={() => setDropTargetId(null)}
                   onDrop={e => onRowDrop(e, job.id)}
                 >
-                  {/* Left info */}
-                  <td className="sticky left-0 z-[11] bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3 align-middle">
+                  {/* Left info (hidden on mobile) */}
+                  <td className="hidden md:table-cell sticky left-0 z-[11] bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3 align-middle">
                     <div className="group/row flex items-center gap-2">
                       <div
                         draggable
@@ -1172,6 +1176,16 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                     </div>
                   </td>
 
+                  {/* Mobile sticky label */}
+                  <td className="md:hidden sticky left-0 z-[11] p-0 align-top overflow-visible">
+                    <div className="bg-white/80 backdrop-blur-sm rounded px-1.5 py-0.5 ml-1 mt-1 text-[10px] leading-tight w-max pointer-events-none">
+                      <span className="font-medium text-fg font-content" dir="auto">{job.name}</span>
+                      {job.accepted_worker_name && (
+                        <span className="text-accent font-content ml-1" dir="auto">{job.accepted_worker_name}</span>
+                      )}
+                    </div>
+                  </td>
+
                   {/* Timeline */}
                   <RowTimeline
                     job={job}
@@ -1199,7 +1213,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
 
             {/* Add Job row */}
             <tr>
-              <td className="sticky left-0 z-[11] bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3">
+              <td className="hidden md:table-cell sticky left-0 z-[11] bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3">
                 <button
                   onClick={onAddJob}
                   className="text-sm text-fg-muted hover:text-accent transition-colors font-medium"
@@ -1207,6 +1221,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                   + Add Job
                 </button>
               </td>
+              <td className="md:hidden p-0" />
               <td colSpan={displayCols.length} />
             </tr>
           </tbody>
