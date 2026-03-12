@@ -1063,7 +1063,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
       <div
         ref={scrollRef}
         className={`overflow-x-auto gantt-print-container ${fullscreen ? 'flex-1 overflow-y-auto' : ''}`}
-        style={{ cursor: panning ? 'grabbing' : undefined }}
+        style={{ cursor: panning ? 'grabbing' : undefined, overscrollBehavior: 'none' }}
         onMouseMove={onTimelineMouseMove}
         onMouseLeave={onTimelineMouseLeave}
       >
