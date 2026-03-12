@@ -923,6 +923,16 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
         setSelectedPhaseId(null);
       }
       if (e.key === 'Escape') setSelectedPhaseId(null);
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const delta = e.key === 'ArrowLeft' ? -1 : 1;
+        const phase = phases.find(p => p.id === selectedPhaseId);
+        if (phase) {
+          const newStart = fmtDate(addDays(parseDate(phase.start_date), delta));
+          const newEnd = fmtDate(addDays(parseDate(phase.end_date), delta));
+          phaseCbRef.current(selectedPhaseId, newStart, newEnd);
+        }
+      }
     };
     const onClick = () => setSelectedPhaseId(null);
     document.addEventListener('keydown', onKey);
