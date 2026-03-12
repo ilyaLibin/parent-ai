@@ -215,7 +215,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
     }, 1000));
   };
 
-  const handleCreatePhase = async (jobId: number, name: string, startDate: string, endDate: string, color: string) => {
+  const handleCreatePhase = async (jobId: number, name: string, startDate: string, endDate: string, color: string): Promise<number | null> => {
     const res = await fetch(`/api/renovation/jobs/${jobId}/phases`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -225,7 +225,9 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
       const phase = await res.json();
       setPhases(prev => [...prev, phase]);
       pushUndo({ type: 'phase-create', id: phase.id, jobId });
+      return phase.id;
     }
+    return null;
   };
 
   const handleUpdatePhase = async (phaseId: number, updates: { name?: string; color?: string }) => {

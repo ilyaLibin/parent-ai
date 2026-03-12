@@ -19,7 +19,7 @@ interface Props {
   onPhaseDatesChange: (phaseId: number, start: string, end: string) => void;
   onReorderJobs: (orderedIds: number[]) => void;
   onAddJob: () => void;
-  onCreatePhase: (jobId: number, name: string, startDate: string, endDate: string, color: string) => void;
+  onCreatePhase: (jobId: number, name: string, startDate: string, endDate: string, color: string) => Promise<number | null>;
   onUpdatePhase: (phaseId: number, updates: { name?: string; color?: string }) => void;
   onDeletePhase: (phaseId: number) => void;
   filters: Set<string>;
@@ -982,12 +982,13 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     });
   }, []);
 
-  const handleSegDialogSubmit = useCallback((name: string, days: number, color: string) => {
+  const handleSegDialogSubmit = useCallback(async (name: string, days: number, color: string) => {
     if (!segDialog) return;
     if (segDialog.mode === 'create') {
       const startDate = segDialog.date;
       const endDate = days > 1 ? fmtDate(addDays(parseDate(startDate), days - 1)) : startDate;
-      onCreatePhase(segDialog.jobId, name, startDate, endDate, color);
+      const newId = await onCreatePhase(segDialog.jobId, name, startDate, endDate, color);
+      if (newId) setSelectedPhaseId(newId);
     } else if (segDialog.phaseId != null) {
       onUpdatePhase(segDialog.phaseId, { name, color });
     }
