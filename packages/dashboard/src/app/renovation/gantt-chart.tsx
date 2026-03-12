@@ -121,14 +121,24 @@ function assignLanes(phases: RenovationPhase[]): { assignments: LaneAssignment[]
     assignments.push({ phase, lane });
   }
 
-  // Single-day phases go below all multi-day lanes
+  // Single-day phases go below all multi-day lanes, with their own lane assignment
   const multiLaneCount = laneEnds.length;
-  for (const phase of singleDay) {
-    assignments.push({ phase, lane: Math.max(multiLaneCount, 1) });
+  const singleBase = Math.max(multiLaneCount, 1);
+  if (singleDay.length > 0) {
+    const sortedSingle = [...singleDay].sort((a, b) => a.start_date.localeCompare(b.start_date));
+    const singleLaneEnds: string[] = [];
+    for (const phase of sortedSingle) {
+      let lane = -1;
+      for (let i = 0; i < singleLaneEnds.length; i++) {
+        if (singleLaneEnds[i] < phase.start_date) { lane = i; break; }
+      }
+      if (lane === -1) { lane = singleLaneEnds.length; singleLaneEnds.push(phase.end_date); }
+      else { singleLaneEnds[lane] = phase.end_date; }
+      assignments.push({ phase, lane: singleBase + lane });
+    }
+    return { assignments, laneCount: singleBase + singleLaneEnds.length };
   }
-
-  const totalLaneCount = singleDay.length > 0 ? Math.max(multiLaneCount, 1) + 1 : multiLaneCount;
-  return { assignments, laneCount: totalLaneCount };
+  return { assignments, laneCount: multiLaneCount };
 }
 
 const TASK_COL_W = 220;
@@ -309,24 +319,32 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
   const days = daysBetween(startDate, endDate);
   const isSingleDay = barPos.isSingleDay;
   const showInside = !isSingleDay;
-  const topOffset = 6 + lane * LANE_HEIGHT;
+  const topOffset = 6 + lane * LANE_HEIGHT + (isSingleDay ? outsideLane * OUTSIDE_LABEL_LANE_H : 0);
 
   return (
     <div
       ref={barRef}
       className="absolute group/bar"
-      style={{ left: isSingleDay ? `${barPos.left}%` : `calc(${barPos.left}% + 4px)`, width: isSingleDay ? 12 : `calc(${barPos.width}% - 8px)`, minWidth: isSingleDay ? 12 : 20, top: topOffset, zIndex: 5 }}
+      style={{ left: isSingleDay ? `${barPos.left}%` : `calc(${barPos.left}% + 4px)`, width: isSingleDay ? 'auto' : `calc(${barPos.width}% - 8px)`, minWidth: isSingleDay ? 12 : 20, top: topOffset, zIndex: 5 }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
       {isSingleDay ? (
-        <div
-          className={`w-3 h-3 rotate-45 rounded-sm mx-auto ${isSelected ? 'ring-2 ring-accent ring-offset-1' : 'border border-black/10'}`}
-          style={{ cursor: isDragging ? 'grabbing' : 'grab', backgroundColor: color || '#9ca3af' }}
-          onMouseDown={onMouseDownMove}
-          onClick={onClick}
-          onDoubleClick={onDoubleClick}
-        />
+        <div className="flex items-center gap-1.5">
+          <div
+            className={`w-3 h-3 rotate-45 rounded-sm shrink-0 ${isSelected ? 'ring-2 ring-accent ring-offset-1' : 'border border-black/10'}`}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab', backgroundColor: color || '#9ca3af' }}
+            onMouseDown={onMouseDownMove}
+            onClick={onClick}
+            onDoubleClick={onDoubleClick}
+          />
+          <div data-label-key={barKey} className="flex items-baseline gap-1.5 pointer-events-none">
+            <span className="text-[10px] text-fg-muted/60 font-content select-none whitespace-nowrap leading-tight">{DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}</span>
+            <span className="text-xs text-fg-secondary font-medium font-content select-none whitespace-nowrap leading-tight" dir="auto">
+              {label}
+            </span>
+          </div>
+        </div>
       ) : (
         <>
           <div
@@ -355,9 +373,9 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
         </>
       )}
 
-      {/* Connector line + label below (outside mode or single-day fallback) */}
-      {(!showInside) && (
-        <div className="flex flex-col items-start" style={{ marginLeft: isSingleDay ? 5 : 0 }}>
+      {/* Connector line + label below (outside mode for multi-day short bars only) */}
+      {(!showInside) && !isSingleDay && (
+        <div className="flex flex-col items-start">
           <div className="w-px bg-fg-muted/40" style={{ height: 8 + outsideLane * OUTSIDE_LABEL_LANE_H }} />
           <div data-label-key={barKey} className="flex items-baseline gap-1.5">
             <span className="text-[10px] text-fg-muted/60 font-content select-none whitespace-nowrap leading-tight">{DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}</span>
