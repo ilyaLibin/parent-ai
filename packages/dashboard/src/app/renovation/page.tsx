@@ -49,6 +49,13 @@ export interface RenovationPhase {
   updated_at: number;
 }
 
+export interface PhaseDependency {
+  id: number;
+  phase_id: number;
+  depends_on_id: number;
+  created_at: number;
+}
+
 export interface RenovationSettings {
   project_start: string | null;
   project_end: string | null;
@@ -68,6 +75,12 @@ async function getPhases(): Promise<RenovationPhase[]> {
   return res.json();
 }
 
+async function getDependencies(): Promise<PhaseDependency[]> {
+  const res = await fetch(`${API_URL}/renovation/phase-deps`, { cache: 'no-store' });
+  if (!res.ok) return [];
+  return res.json();
+}
+
 async function getSettings(): Promise<RenovationSettings> {
   const res = await fetch(`${API_URL}/renovation/settings`, { cache: 'no-store' });
   if (!res.ok) return { project_start: null, project_end: null, project_name: null, hide_prices: false };
@@ -75,6 +88,6 @@ async function getSettings(): Promise<RenovationSettings> {
 }
 
 export default async function RenovationPage() {
-  const [jobs, phases, settings] = await Promise.all([getJobs(), getPhases(), getSettings()]);
-  return <RenovationView initialJobs={jobs} initialPhases={phases} initialSettings={settings} />;
+  const [jobs, phases, deps, settings] = await Promise.all([getJobs(), getPhases(), getDependencies(), getSettings()]);
+  return <RenovationView initialJobs={jobs} initialPhases={phases} initialDeps={deps} initialSettings={settings} />;
 }

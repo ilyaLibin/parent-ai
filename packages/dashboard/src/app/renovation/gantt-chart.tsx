@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { RenovationJob, RenovationPhase } from './page';
+import type { RenovationJob, RenovationPhase, PhaseDependency } from './page';
 import { nameToColor } from './utils';
 
 type ZoomLevel = 'month' | 'week' | '3day' | 'day';
@@ -11,6 +11,7 @@ const ZOOM_LEVELS: ZoomLevel[] = ['month', 'week', '3day', 'day'];
 interface Props {
   jobs: RenovationJob[];
   phases: RenovationPhase[];
+  deps: PhaseDependency[];
   projectStart: string | null;
   projectEnd: string | null;
   hidePrices: boolean;
@@ -22,6 +23,8 @@ interface Props {
   onCreatePhase: (jobId: number, name: string, startDate: string, endDate: string, color: string) => Promise<number | null>;
   onUpdatePhase: (phaseId: number, updates: { name?: string; color?: string }) => void;
   onDeletePhase: (phaseId: number) => void;
+  onCreateDep: (phaseId: number, dependsOnId: number) => Promise<boolean>;
+  onDeleteDep: (depId: number) => void;
   filters: Set<string>;
   onToggleFilter: (f: string) => void;
   onClearFilters: () => void;
@@ -310,9 +313,11 @@ interface BarProps {
   outsideLane?: number;
   barKey?: string;
   onDoubleClick: (e: React.MouseEvent) => void;
+  phaseId?: number;
+  onHoverPhase?: (id: number | null) => void;
 }
 
-function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, isSelected, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onClick, onDoubleClick }: BarProps) {
+function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, isSelected, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onClick, onDoubleClick, phaseId, onHoverPhase }: BarProps) {
   const [hover, setHover] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const useCustomColor = !!color;
@@ -326,8 +331,8 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
       ref={barRef}
       className="absolute group/bar"
       style={{ left: isSingleDay ? `${barPos.left}%` : `calc(${barPos.left}% + 4px)`, width: isSingleDay ? 'auto' : `calc(${barPos.width}% - 8px)`, minWidth: isSingleDay ? 12 : 20, top: topOffset, zIndex: 5 }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={() => { setHover(true); if (phaseId != null && onHoverPhase) onHoverPhase(phaseId); }}
+      onMouseLeave={() => { setHover(false); if (onHoverPhase) onHoverPhase(null); }}
     >
       {isSingleDay ? (
         <div className="flex items-center gap-1.5">
@@ -521,6 +526,9 @@ function RowTimeline({
   onSegmentDblClick,
   selectedPhaseId,
   onSelectPhase,
+  hoveredPhaseId,
+  onHoverPhase,
+  reportRowHeight,
   totalCols,
   timelineRef: parentTimelineRef,
   hoveredCol,
@@ -539,7 +547,10 @@ function RowTimeline({
   onTimelineDblClick: (e: React.MouseEvent, job: RenovationJob) => void;
   onSegmentDblClick: (e: React.MouseEvent, phase: RenovationPhase) => void;
   selectedPhaseId: number | null;
-  onSelectPhase: (id: number | null) => void;
+  onSelectPhase: (id: number, metaKey: boolean) => void;
+  hoveredPhaseId: number | null;
+  onHoverPhase: (id: number | null) => void;
+  reportRowHeight: (jobId: number, height: number) => void;
   totalCols: number;
   timelineRef: React.MutableRefObject<HTMLDivElement | null>;
   hoveredCol: number | null;
@@ -582,6 +593,8 @@ function RowTimeline({
 
   const baseH = Math.max(56, insideLaneCount * LANE_HEIGHT + 12);
   const rowH = baseH + Math.max(0, outsideLaneCount - 1) * OUTSIDE_LABEL_LANE_H;
+
+  useEffect(() => { reportRowHeight(job.id, rowH); }, [job.id, rowH, reportRowHeight]);
 
   const setRef = useCallback((el: HTMLDivElement | null) => {
     containerRef.current = el;
@@ -630,10 +643,15 @@ function RowTimeline({
                 isDragging={dragging}
                 isActiveDrag={activeDragKey === key}
                 isSelected={selectedPhaseId === phase.id}
-                onMouseDownMove={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move')}
+                onMouseDownMove={e => {
+                  if (e.metaKey || e.ctrlKey) { e.stopPropagation(); e.preventDefault(); onSelectPhase(phase.id, true); return; }
+                  onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'move');
+                }}
                 onMouseDownLeft={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'left')}
                 onMouseDownRight={e => onMouseDown(e, 'phase', phase.id, phase.start_date, phase.end_date, 'right')}
-                onClick={e => { e.stopPropagation(); onSelectPhase(phase.id); }}
+                onClick={e => { e.stopPropagation(); if (e.metaKey || e.ctrlKey) return; onSelectPhase(phase.id, false); }}
+                onHoverPhase={onHoverPhase}
+                phaseId={phase.id}
                 onDoubleClick={e => onSegmentDblClick(e, phase)}
               />
             );
@@ -672,6 +690,159 @@ function RowTimeline({
   );
 }
 
+// ── dependency arrow overlay ──
+
+function DependencyArrows({
+  deps,
+  phases,
+  columns,
+  jobs,
+  lanesByJob,
+  hoveredPhaseId,
+  scrollContainer,
+  rowHeights,
+  onDeleteDep,
+}: {
+  deps: PhaseDependency[];
+  phases: RenovationPhase[];
+  columns: Column[];
+  jobs: RenovationJob[];
+  lanesByJob: Map<number, { assignments: LaneAssignment[]; laneCount: number }>;
+  hoveredPhaseId: number | null;
+  scrollContainer: HTMLElement | null;
+  rowHeights: Map<number, number>;
+  onDeleteDep: (depId: number) => void;
+}) {
+  if (!scrollContainer || deps.length === 0 || !columns.length) return null;
+
+  if (hoveredPhaseId === null) return null;
+
+  // Find deps related to the active phase
+  const relevantDeps = deps.filter(d => d.phase_id === hoveredPhaseId || d.depends_on_id === hoveredPhaseId);
+  if (relevantDeps.length === 0) return null;
+
+  const phaseMap = new Map(phases.map(p => [p.id, p]));
+
+  // Compute row Y offsets from cumulative heights
+  // Account for thead height (approximate: ~60px for month strip + column headers)
+  const table = scrollContainer.querySelector('table');
+  if (!table) return null;
+  const thead = table.querySelector('thead');
+  const theadH = thead ? thead.offsetHeight : 60;
+
+  const rowYOffset = new Map<number, number>();
+  let yAcc = theadH;
+  for (const job of jobs) {
+    rowYOffset.set(job.id, yAcc);
+    yAcc += rowHeights.get(job.id) || 56;
+  }
+
+  // Compute X positions using the same percentage math as barPosition
+  const DAY = 86400000;
+  const t0 = columns[0].start.getTime();
+  const t1 = columns[columns.length - 1].end.getTime() + DAY;
+  const tableW = table.offsetWidth;
+
+  function getPhaseXPx(phase: RenovationPhase, edge: 'left' | 'right'): number | null {
+    const s = Math.max(parseDate(phase.start_date).getTime(), t0);
+    const e = Math.min(parseDate(phase.end_date).getTime() + DAY, t1);
+    if (s > e) return null;
+    const timelineW = tableW - TASK_COL_W;
+    if (edge === 'right') return TASK_COL_W + ((e - t0) / (t1 - t0)) * timelineW;
+    return TASK_COL_W + ((s - t0) / (t1 - t0)) * timelineW;
+  }
+
+  function getPhaseYPx(phase: RenovationPhase): number | null {
+    const rowY = rowYOffset.get(phase.job_id);
+    if (rowY == null) return null;
+    const laneInfo = lanesByJob.get(phase.job_id);
+    let lane = 0;
+    if (laneInfo) {
+      const assignment = laneInfo.assignments.find(a => a.phase.id === phase.id);
+      if (assignment) lane = assignment.lane;
+    }
+    return rowY + 6 + lane * LANE_HEIGHT + LANE_BAR_H / 2;
+  }
+
+  const arrows: { x1: number; y1: number; x2: number; y2: number; violated: boolean; depId: number }[] = [];
+
+  for (const dep of relevantDeps) {
+    const predecessor = phaseMap.get(dep.depends_on_id);
+    const successor = phaseMap.get(dep.phase_id);
+    if (!predecessor || !successor) continue;
+
+    const x1 = getPhaseXPx(predecessor, 'right');
+    const y1 = getPhaseYPx(predecessor);
+    const x2 = getPhaseXPx(successor, 'left');
+    const y2 = getPhaseYPx(successor);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
+
+    // FS violation: successor starts before predecessor ends
+    const violated = successor.start_date <= predecessor.end_date;
+
+    arrows.push({ x1, y1, x2, y2, violated, depId: dep.id });
+  }
+
+  if (arrows.length === 0) return null;
+
+  return (
+    <svg
+      className="absolute top-0 left-0 z-[8]"
+      width={tableW}
+      height={yAcc}
+      style={{ overflow: 'visible', pointerEvents: 'none' }}
+    >
+      <defs>
+        <marker id="dep-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6" fill="none" stroke="#6b7280" strokeWidth="1.5" />
+        </marker>
+        <marker id="dep-arrow-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L8,3 L0,6" fill="none" stroke="#ef4444" strokeWidth="1.5" />
+        </marker>
+      </defs>
+      {arrows.map((a, i) => {
+        const arrowColor = a.violated ? '#ef4444' : '#6b7280';
+        const markerId = a.violated ? 'dep-arrow-red' : 'dep-arrow';
+        const midX = (a.x1 + a.x2) / 2;
+        const dx = a.x2 - a.x1;
+        let path: string;
+        if (dx > 20) {
+          path = `M${a.x1},${a.y1} C${midX},${a.y1} ${midX},${a.y2} ${a.x2},${a.y2}`;
+        } else {
+          const detourX = Math.max(a.x1 + 20, a.x2 + 20);
+          const detourY = Math.abs(a.y2 - a.y1) < 10 ? a.y1 + 30 : (a.y1 + a.y2) / 2;
+          path = `M${a.x1},${a.y1} L${detourX},${a.y1} Q${detourX + 10},${detourY} ${a.x2},${a.y2}`;
+        }
+        return (
+          <g key={i}>
+            {/* Visible arrow */}
+            <path
+              d={path}
+              fill="none"
+              stroke={arrowColor}
+              strokeWidth={a.violated ? 2 : 1.5}
+              strokeDasharray={a.violated ? '6,3' : 'none'}
+              markerEnd={`url(#${markerId})`}
+              opacity={0.7}
+            />
+            {/* Fat invisible hit area for clicking to delete */}
+            <path
+              d={path}
+              fill="none"
+              stroke="transparent"
+              strokeWidth={14}
+              style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+              onClick={(e) => { e.stopPropagation(); onDeleteDep(a.depId); }}
+            >
+              <title>Click to remove dependency</title>
+            </path>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // ── segment dialog state ──
 
 interface SegmentDialogState {
@@ -688,7 +859,7 @@ interface SegmentDialogState {
 
 // ── component ──
 
-export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, onCreatePhase, onUpdatePhase, onDeletePhase, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
+export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, onCreatePhase, onUpdatePhase, onDeletePhase, onCreateDep, onDeleteDep, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
   const [zoom, setZoom] = useState<ZoomLevel>('week');
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
@@ -735,6 +906,34 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   const phaseCbRef = useRef(onPhaseDatesChange);
   phaseCbRef.current = onPhaseDatesChange;
 
+  // Build successor map for cascade moves
+  const successorMap = useMemo(() => {
+    const map = new Map<number, number[]>(); // predecessorId -> [successorIds]
+    for (const d of deps) {
+      if (!map.has(d.depends_on_id)) map.set(d.depends_on_id, []);
+      map.get(d.depends_on_id)!.push(d.phase_id);
+    }
+    return map;
+  }, [deps]);
+
+  // Get all transitive successors of a phase
+  const getTransitiveSuccessors = useCallback((phaseId: number): number[] => {
+    const result: number[] = [];
+    const visited = new Set<number>();
+    const queue = [phaseId];
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      if (visited.has(cur)) continue;
+      visited.add(cur);
+      const succs = successorMap.get(cur) || [];
+      for (const s of succs) {
+        result.push(s);
+        queue.push(s);
+      }
+    }
+    return result;
+  }, [successorMap]);
+
   const frozenCols = useRef(columns);
   const dragInfo = useRef<{
     type: 'job' | 'phase';
@@ -744,6 +943,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     origStart: string;
     origEnd: string;
     pxPerMs: number;
+    cascadePhases?: { id: number; origStart: string; origEnd: string }[];
   } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [activeDragKey, setActiveDragKey] = useState<string | null>(null);
@@ -758,10 +958,22 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
     const t0 = columns[0].start.getTime();
     const t1 = columns[columns.length - 1].end.getTime();
 
-    dragInfo.current = { type, id, edge, startX: e.clientX, origStart: startDate, origEnd: endDate, pxPerMs: px / (t1 - t0) };
+    // Compute cascade phases for "move" drags on phases
+    let cascadePhases: { id: number; origStart: string; origEnd: string }[] | undefined;
+    if (type === 'phase' && edge === 'move') {
+      const successors = getTransitiveSuccessors(id);
+      if (successors.length > 0) {
+        cascadePhases = successors.map(sId => {
+          const p = phases.find(ph => ph.id === sId);
+          return p ? { id: sId, origStart: p.start_date, origEnd: p.end_date } : null;
+        }).filter(Boolean) as { id: number; origStart: string; origEnd: string }[];
+      }
+    }
+
+    dragInfo.current = { type, id, edge, startX: e.clientX, origStart: startDate, origEnd: endDate, pxPerMs: px / (t1 - t0), cascadePhases };
     setActiveDragKey(`${type}-${id}`);
     setDragging(true);
-  }, [columns]);
+  }, [columns, phases, getTransitiveSuccessors]);
 
   useEffect(() => {
     if (!dragging) return;
@@ -778,7 +990,17 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
       else if (d.edge === 'right') { ns = s0; ne = addDays(e0, daysDelta); if (ne < ns) ne = ns; }
       else { ns = addDays(s0, daysDelta); ne = addDays(e0, daysDelta); }
       if (d.type === 'job') jobCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
-      else phaseCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
+      else {
+        phaseCbRef.current(d.id, fmtDate(ns), fmtDate(ne));
+        // Cascade move all transitive successors
+        if (d.edge === 'move' && d.cascadePhases) {
+          for (const cp of d.cascadePhases) {
+            const cs = addDays(parseDate(cp.origStart), daysDelta);
+            const ce = addDays(parseDate(cp.origEnd), daysDelta);
+            phaseCbRef.current(cp.id, fmtDate(cs), fmtDate(ce));
+          }
+        }
+      }
     };
     const onUp = () => { dragInfo.current = null; setDragging(false); setActiveDragKey(null); };
     document.addEventListener('mousemove', onMove);
@@ -910,8 +1132,39 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
   }, [displayCols.length]);
   const onTimelineMouseLeave = useCallback(() => { hoveredColRef.current = null; setHoveredCol(null); }, []);
 
-  // ── phase selection ──
+  // ── row heights for dependency arrows ──
+  const [rowHeights, setRowHeights] = useState<Map<number, number>>(new Map());
+  const reportRowHeight = useCallback((jobId: number, height: number) => {
+    setRowHeights(prev => {
+      if (prev.get(jobId) === height) return prev;
+      const next = new Map(prev);
+      next.set(jobId, height);
+      return next;
+    });
+  }, []);
+
+  // ── phase selection + dependency linking ──
   const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(null);
+  const [hoveredPhaseId, setHoveredPhaseId] = useState<number | null>(null);
+
+  const handlePhaseClick = useCallback((phaseId: number, metaKey: boolean) => {
+    if (metaKey && selectedPhaseId !== null && selectedPhaseId !== phaseId) {
+      // Cmd+click: create dependency from selected (predecessor) → clicked (successor)
+      // Or remove if already exists
+      const existing = deps.find(d =>
+        (d.depends_on_id === selectedPhaseId && d.phase_id === phaseId) ||
+        (d.depends_on_id === phaseId && d.phase_id === selectedPhaseId)
+      );
+      if (existing) {
+        onDeleteDep(existing.id);
+      } else {
+        onCreateDep(phaseId, selectedPhaseId); // clicked depends on selected
+      }
+      setSelectedPhaseId(null);
+    } else {
+      setSelectedPhaseId(phaseId);
+    }
+  }, [selectedPhaseId, deps, onCreateDep, onDeleteDep]);
 
   useEffect(() => {
     if (selectedPhaseId === null) return;
@@ -934,11 +1187,15 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
         }
       }
     };
-    const onClick = () => setSelectedPhaseId(null);
+    const onClickOutside = (e: MouseEvent) => {
+      // Don't deselect when clicking on a bar (allows Cmd+click linking)
+      if ((e.target as HTMLElement).closest('.group\\/bar')) return;
+      setSelectedPhaseId(null);
+    };
     document.addEventListener('keydown', onKey);
     // Delay so the click that selected doesn't immediately deselect
-    const timer = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
-    return () => { document.removeEventListener('keydown', onKey); clearTimeout(timer); document.removeEventListener('mousedown', onClick); };
+    const timer = setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0);
+    return () => { document.removeEventListener('keydown', onKey); clearTimeout(timer); document.removeEventListener('mousedown', onClickOutside); };
   }, [selectedPhaseId, onDeletePhase]);
 
   // ── segment dialog ──
@@ -1091,7 +1348,7 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
 
       <div
         ref={scrollRef}
-        className={`overflow-x-auto gantt-print-container ${fullscreen ? 'flex-1 overflow-y-auto' : ''}`}
+        className={`overflow-x-auto gantt-print-container relative ${fullscreen ? 'flex-1 overflow-y-auto' : ''}`}
         style={{ cursor: panning ? 'grabbing' : undefined, overscrollBehavior: 'none' }}
         onMouseMove={onTimelineMouseMove}
         onMouseLeave={onTimelineMouseLeave}
@@ -1231,7 +1488,10 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
                     onTimelineDblClick={handleTimelineDblClick}
                     onSegmentDblClick={handleSegmentDblClick}
                     selectedPhaseId={selectedPhaseId}
-                    onSelectPhase={setSelectedPhaseId}
+                    onSelectPhase={handlePhaseClick}
+                    hoveredPhaseId={hoveredPhaseId}
+                    onHoverPhase={setHoveredPhaseId}
+                    reportRowHeight={reportRowHeight}
                     totalCols={totalCols}
                     timelineRef={timelineRef}
                     hoveredCol={hoveredCol}
@@ -1255,6 +1515,19 @@ export function GanttChart({ jobs, phases, projectStart, projectEnd, hidePrices,
             </tr>
           </tbody>
         </table>
+
+        {/* Dependency arrows (on hover/select) */}
+        <DependencyArrows
+          deps={deps}
+          phases={phases}
+          columns={displayCols}
+          jobs={jobs}
+          lanesByJob={lanesByJob}
+          hoveredPhaseId={hoveredPhaseId}
+          scrollContainer={scrollRef.current}
+          rowHeights={rowHeights}
+          onDeleteDep={onDeleteDep}
+        />
       </div>
 
       {/* Segment create/edit dialog */}

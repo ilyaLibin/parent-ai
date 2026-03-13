@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { RenovationJob, RenovationPhase, RenovationSettings } from './page';
+import type { RenovationJob, RenovationPhase, PhaseDependency, RenovationSettings } from './page';
 import { GanttChart } from './gantt-chart';
 import { JobModal } from './job-modal';
 
@@ -20,7 +20,9 @@ type UndoEntry =
   | { type: 'phase-create'; id: number; jobId: number }
   | { type: 'phase-update'; id: number; prev: { name: string; color: string } }
   | { type: 'phase-delete'; phase: RenovationPhase }
-  | { type: 'reorder'; prevOrder: number[] };
+  | { type: 'reorder'; prevOrder: number[] }
+  | { type: 'dep-create'; depId: number }
+  | { type: 'dep-delete'; dep: PhaseDependency };
 
 const UNDO_LABELS: Record<UndoEntry['type'], string> = {
   'job-dates': 'move job',
@@ -29,6 +31,8 @@ const UNDO_LABELS: Record<UndoEntry['type'], string> = {
   'phase-update': 'rename segment',
   'phase-delete': 'delete segment',
   'reorder': 'reorder jobs',
+  'dep-create': 'link segments',
+  'dep-delete': 'unlink segments',
 };
 
 const MAX_UNDO = 30;
@@ -36,12 +40,14 @@ const MAX_UNDO = 30;
 interface Props {
   initialJobs: RenovationJob[];
   initialPhases: RenovationPhase[];
+  initialDeps: PhaseDependency[];
   initialSettings: RenovationSettings;
 }
 
-export function RenovationView({ initialJobs, initialPhases, initialSettings }: Props) {
+export function RenovationView({ initialJobs, initialPhases, initialDeps, initialSettings }: Props) {
   const [jobs, setJobs] = useState(initialJobs);
   const [phases, setPhases] = useState(initialPhases);
+  const [deps, setDeps] = useState(initialDeps);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<RenovationJob | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -127,6 +133,22 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
         });
         break;
       }
+      case 'dep-create': {
+        await fetch(`/api/renovation/phase-deps/${entry.depId}`, { method: 'DELETE' });
+        setDeps(prev => prev.filter(d => d.id !== entry.depId));
+        break;
+      }
+      case 'dep-delete': {
+        const res = await fetch('/api/renovation/phase-deps', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phase_id: entry.dep.phase_id, depends_on_id: entry.dep.depends_on_id }),
+        });
+        if (res.ok) {
+          const restored = await res.json();
+          setDeps(prev => [...prev, restored]);
+        }
+        break;
+      }
     }
     showToast(`Undone: ${UNDO_LABELS[entry.type]}`);
   }, [showToast]);
@@ -145,12 +167,14 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
   }, [handleUndo]);
 
   const refresh = useCallback(async () => {
-    const [jobsRes, phasesRes] = await Promise.all([
+    const [jobsRes, phasesRes, depsRes] = await Promise.all([
       fetch('/api/renovation/jobs'),
       fetch('/api/renovation/phases'),
+      fetch('/api/renovation/phase-deps'),
     ]);
     if (jobsRes.ok) setJobs(await jobsRes.json());
     if (phasesRes.ok) setPhases(await phasesRes.json());
+    if (depsRes.ok) setDeps(await depsRes.json());
   }, []);
 
   const handleOpenNew = () => { setEditingJob(null); setModalOpen(true); };
@@ -251,6 +275,27 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
     if (phase) pushUndo({ type: 'phase-delete', phase });
     await fetch(`/api/renovation/phases/${phaseId}`, { method: 'DELETE' });
     setPhases(prev => prev.filter(p => p.id !== phaseId));
+  };
+
+  const handleCreateDep = async (phaseId: number, dependsOnId: number): Promise<boolean> => {
+    const res = await fetch('/api/renovation/phase-deps', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phase_id: phaseId, depends_on_id: dependsOnId }),
+    });
+    if (res.ok) {
+      const dep = await res.json();
+      setDeps(prev => [...prev, dep]);
+      pushUndo({ type: 'dep-create', depId: dep.id });
+      return true;
+    }
+    return false;
+  };
+
+  const handleDeleteDep = async (depId: number) => {
+    const dep = deps.find(d => d.id === depId);
+    if (dep) pushUndo({ type: 'dep-delete', dep });
+    await fetch(`/api/renovation/phase-deps/${depId}`, { method: 'DELETE' });
+    setDeps(prev => prev.filter(d => d.id !== depId));
   };
 
   const handleReorderJobs = async (orderedIds: number[]) => {
@@ -414,6 +459,7 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
       <GanttChart
         jobs={filteredJobs}
         phases={phases}
+        deps={deps}
         projectStart={settings.project_start}
         projectEnd={settings.project_end}
         hidePrices={settings.hide_prices}
@@ -425,6 +471,8 @@ export function RenovationView({ initialJobs, initialPhases, initialSettings }: 
         onCreatePhase={handleCreatePhase}
         onUpdatePhase={handleUpdatePhase}
         onDeletePhase={handleDeletePhase}
+        onCreateDep={handleCreateDep}
+        onDeleteDep={handleDeleteDep}
         filters={filters}
         onToggleFilter={toggleFilter}
         onClearFilters={() => setFilters(new Set())}

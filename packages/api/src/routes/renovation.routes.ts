@@ -15,6 +15,9 @@ import {
   createRenovationPhase,
   updateRenovationPhase,
   deleteRenovationPhase,
+  getAllPhaseDependencies,
+  createPhaseDependency,
+  deletePhaseDependency,
   getIntegration,
   saveIntegration,
 } from '@parent-ai/shared';
@@ -129,6 +132,28 @@ renovation.put('/renovation/phases/:id', async (c) => {
 renovation.delete('/renovation/phases/:id', (c) => {
   const id = Number(c.req.param('id'));
   const deleted = deleteRenovationPhase(id);
+  if (!deleted) return c.json({ error: 'Not found' }, 404);
+  return c.json({ ok: true });
+});
+
+// Phase dependencies
+renovation.get('/renovation/phase-deps', (c) => {
+  return c.json(getAllPhaseDependencies());
+});
+
+renovation.post('/renovation/phase-deps', async (c) => {
+  const body = await c.req.json();
+  if (!body.phase_id || !body.depends_on_id) {
+    return c.json({ error: 'phase_id and depends_on_id are required' }, 400);
+  }
+  const dep = createPhaseDependency(body.phase_id, body.depends_on_id);
+  if (!dep) return c.json({ error: 'Invalid dependency (cycle or duplicate)' }, 400);
+  return c.json(dep, 201);
+});
+
+renovation.delete('/renovation/phase-deps/:id', (c) => {
+  const id = Number(c.req.param('id'));
+  const deleted = deletePhaseDependency(id);
   if (!deleted) return c.json({ error: 'Not found' }, 404);
   return c.json({ ok: true });
 });

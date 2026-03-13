@@ -161,6 +161,18 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_renovation_phases_job ON renovation_phases(job_id);
 
+  CREATE TABLE IF NOT EXISTS renovation_phase_deps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phase_id INTEGER NOT NULL,
+    depends_on_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (phase_id) REFERENCES renovation_phases(id) ON DELETE CASCADE,
+    FOREIGN KEY (depends_on_id) REFERENCES renovation_phases(id) ON DELETE CASCADE,
+    UNIQUE(phase_id, depends_on_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_renovation_phase_deps_phase ON renovation_phase_deps(phase_id);
+  CREATE INDEX IF NOT EXISTS idx_renovation_phase_deps_dep ON renovation_phase_deps(depends_on_id);
+
   CREATE TABLE IF NOT EXISTS integration_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     integration_type TEXT NOT NULL UNIQUE,
@@ -1119,6 +1131,63 @@ export function deleteRenovationPhase(id: number): boolean {
   const deleted = db.prepare('DELETE FROM renovation_phases WHERE id = ?').run(id).changes > 0;
   if (deleted && phase) recalcJobDatesFromPhases(phase.job_id);
   return deleted;
+}
+
+// ── Phase dependencies (finish-to-start) ──
+
+export interface PhaseDependency {
+  id: number;
+  phase_id: number;
+  depends_on_id: number;
+  created_at: number;
+}
+
+export function getAllPhaseDependencies(): PhaseDependency[] {
+  return db.prepare('SELECT * FROM renovation_phase_deps').all() as PhaseDependency[];
+}
+
+export function createPhaseDependency(phaseId: number, dependsOnId: number): PhaseDependency | null {
+  if (phaseId === dependsOnId) return null;
+  // Check for cycles: dependsOnId must not be reachable from phaseId
+  if (wouldCreateCycle(phaseId, dependsOnId)) return null;
+  const now = Date.now();
+  try {
+    const result = db.prepare(
+      'INSERT INTO renovation_phase_deps (phase_id, depends_on_id, created_at) VALUES (?, ?, ?)'
+    ).run(phaseId, dependsOnId, now);
+    return db.prepare('SELECT * FROM renovation_phase_deps WHERE id = ?').get(result.lastInsertRowid) as PhaseDependency;
+  } catch {
+    return null; // UNIQUE constraint violation
+  }
+}
+
+export function deletePhaseDependency(id: number): boolean {
+  return db.prepare('DELETE FROM renovation_phase_deps WHERE id = ?').run(id).changes > 0;
+}
+
+export function deletePhaseDependencyByPair(phaseId: number, dependsOnId: number): boolean {
+  return db.prepare('DELETE FROM renovation_phase_deps WHERE phase_id = ? AND depends_on_id = ?').run(phaseId, dependsOnId).changes > 0;
+}
+
+function wouldCreateCycle(phaseId: number, dependsOnId: number): boolean {
+  // BFS from phaseId following forward deps — if we reach dependsOnId, it's a cycle
+  const deps = db.prepare('SELECT phase_id, depends_on_id FROM renovation_phase_deps').all() as { phase_id: number; depends_on_id: number }[];
+  const forward = new Map<number, number[]>();
+  for (const d of deps) {
+    if (!forward.has(d.depends_on_id)) forward.set(d.depends_on_id, []);
+    forward.get(d.depends_on_id)!.push(d.phase_id);
+  }
+  const visited = new Set<number>();
+  const queue = [phaseId];
+  while (queue.length > 0) {
+    const cur = queue.pop()!;
+    if (cur === dependsOnId) return true;
+    if (visited.has(cur)) continue;
+    visited.add(cur);
+    const successors = forward.get(cur) || [];
+    queue.push(...successors);
+  }
+  return false;
 }
 
 function recalcJobDatesFromPhases(jobId: number): void {
