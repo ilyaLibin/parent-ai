@@ -325,10 +325,10 @@ export function JobModal({ job, onClose, onDelete }: Props) {
             </div>
           )}
 
-          {/* Workers Kanban — only for existing jobs */}
+          {/* Suppliers Kanban — only for existing jobs */}
           {!isNew && (
             <div>
-              <label className="text-xs text-fg-muted font-semibold uppercase tracking-wider block mb-3">Workers</label>
+              <label className="text-xs text-fg-muted font-semibold uppercase tracking-wider block mb-3">Suppliers</label>
 
               {/* Add worker form */}
               {showAddWorker && (

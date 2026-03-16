@@ -405,7 +405,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
             {DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}{startDate !== endDate && ` → ${DAY_NAMES[parseDate(endDate).getDay()]} ${fmtShort(endDate)}`}
           </div>
           <div className="text-fg-muted font-content">
-            {days + 1} day{days > 0 ? 's' : ''}{days > 0 && ` (${workDaysBetween(startDate, endDate)} work days)`}
+            {days + 1} day{days > 0 ? 's' : ''}{days > 0 && ` (${workDaysBetween(startDate, endDate)} w. days)`}
           </div>
         </div>,
         document.body
@@ -416,6 +416,12 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
 
 // ── segment dialog (inline popover for create/edit) ──
 
+interface DepPill {
+  depId: number;
+  label: string;
+  direction: 'predecessor' | 'successor';
+}
+
 interface SegmentDialogProps {
   mode: 'create' | 'edit';
   x: number;
@@ -423,12 +429,14 @@ interface SegmentDialogProps {
   initialName: string;
   initialDays: number;
   initialColor: string;
+  depPills: DepPill[];
   onSubmit: (name: string, days: number, color: string) => void;
   onDelete?: () => void;
+  onDeleteDep?: (depId: number) => void;
   onCancel: () => void;
 }
 
-function SegmentDialog({ mode, x, y, initialName, initialDays, initialColor, onSubmit, onDelete, onCancel }: SegmentDialogProps) {
+function SegmentDialog({ mode, x, y, initialName, initialDays, initialColor, depPills, onSubmit, onDelete, onDeleteDep, onCancel }: SegmentDialogProps) {
   const [name, setName] = useState(initialName);
   const [days, setDays] = useState(initialDays > 0 ? initialDays : 1);
   const [color, setColor] = useState(initialColor);
@@ -488,6 +496,30 @@ function SegmentDialog({ mode, x, y, initialName, initialDays, initialColor, onS
           <label className="text-xs text-fg-muted">Days</label>
         </div>
       )}
+      {/* Dependency pills */}
+      {depPills.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {depPills.map(pill => (
+            <span
+              key={pill.depId}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] bg-surface-hover border border-border-subtle text-fg-secondary"
+            >
+              <span className="text-fg-muted">{pill.direction === 'predecessor' ? 'after' : 'before'}</span>
+              <span className="font-medium font-content" dir="auto">{pill.label}</span>
+              {onDeleteDep && (
+                <button
+                  onClick={() => onDeleteDep(pill.depId)}
+                  className="text-fg-muted hover:text-error transition-colors ml-0.5 leading-none"
+                  title="Remove dependency"
+                >
+                  &times;
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         {mode === 'edit' && onDelete ? (
           <button onClick={onDelete} className="text-xs text-error hover:text-error/80 transition-colors">
@@ -793,37 +825,39 @@ function DependencyArrows({
       style={{ overflow: 'visible', pointerEvents: 'none' }}
     >
       <defs>
-        <marker id="dep-arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <path d="M0,0 L8,3 L0,6" fill="none" stroke="#6b7280" strokeWidth="1.5" />
+        <marker id="dep-arrow" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto">
+          <path d="M0,0 L6,2.5 L0,5" fill="none" stroke="#000" strokeWidth="1" />
         </marker>
-        <marker id="dep-arrow-red" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <path d="M0,0 L8,3 L0,6" fill="none" stroke="#ef4444" strokeWidth="1.5" />
+        <marker id="dep-arrow-red" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto">
+          <path d="M0,0 L6,2.5 L0,5" fill="none" stroke="#ef4444" strokeWidth="1" />
         </marker>
       </defs>
       {arrows.map((a, i) => {
-        const arrowColor = a.violated ? '#ef4444' : '#6b7280';
+        const arrowColor = a.violated ? '#ef4444' : '#000';
         const markerId = a.violated ? 'dep-arrow-red' : 'dep-arrow';
-        const midX = (a.x1 + a.x2) / 2;
         const dx = a.x2 - a.x1;
+        const gap = 10; // small gap after predecessor before turning
         let path: string;
-        if (dx > 20) {
-          path = `M${a.x1},${a.y1} C${midX},${a.y1} ${midX},${a.y2} ${a.x2},${a.y2}`;
+        if (dx > gap * 2) {
+          // Normal: right a gap, down/up to successor row, right to successor
+          const turnX = a.x1 + gap;
+          path = `M${a.x1},${a.y1} H${turnX} V${a.y2} H${a.x2}`;
         } else {
-          const detourX = Math.max(a.x1 + 20, a.x2 + 20);
-          const detourY = Math.abs(a.y2 - a.y1) < 10 ? a.y1 + 30 : (a.y1 + a.y2) / 2;
-          path = `M${a.x1},${a.y1} L${detourX},${a.y1} Q${detourX + 10},${detourY} ${a.x2},${a.y2}`;
+          // Successor overlaps/before predecessor — route around below
+          const turnX = a.x1 + gap;
+          const belowY = Math.max(a.y1, a.y2) + 25;
+          const entryX = a.x2 - gap;
+          path = `M${a.x1},${a.y1} H${turnX} V${belowY} H${entryX} V${a.y2} H${a.x2}`;
         }
         return (
           <g key={i}>
-            {/* Visible arrow */}
             <path
               d={path}
               fill="none"
               stroke={arrowColor}
-              strokeWidth={a.violated ? 2 : 1.5}
-              strokeDasharray={a.violated ? '6,3' : 'none'}
+              strokeWidth={1}
+              strokeDasharray={a.violated ? '4,3' : 'none'}
               markerEnd={`url(#${markerId})`}
-              opacity={0.7}
             />
             {/* Fat invisible hit area for clicking to delete */}
             <path
@@ -1184,6 +1218,14 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
           const newStart = fmtDate(addDays(parseDate(phase.start_date), delta));
           const newEnd = fmtDate(addDays(parseDate(phase.end_date), delta));
           phaseCbRef.current(selectedPhaseId, newStart, newEnd);
+          // Cascade move all transitive successors
+          const successors = getTransitiveSuccessors(selectedPhaseId);
+          for (const sId of successors) {
+            const sp = phases.find(p => p.id === sId);
+            if (sp) {
+              phaseCbRef.current(sId, fmtDate(addDays(parseDate(sp.start_date), delta)), fmtDate(addDays(parseDate(sp.end_date), delta)));
+            }
+          }
         }
       }
     };
@@ -1196,7 +1238,7 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
     // Delay so the click that selected doesn't immediately deselect
     const timer = setTimeout(() => document.addEventListener('mousedown', onClickOutside), 0);
     return () => { document.removeEventListener('keydown', onKey); clearTimeout(timer); document.removeEventListener('mousedown', onClickOutside); };
-  }, [selectedPhaseId, onDeletePhase]);
+  }, [selectedPhaseId, onDeletePhase, phases, getTransitiveSuccessors]);
 
   // ── segment dialog ──
   const [segDialog, setSegDialog] = useState<SegmentDialogState | null>(null);
@@ -1381,7 +1423,7 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
             {/* Column headers */}
             <tr className="border-b border-border">
               <th className="hidden md:table-cell sticky left-0 z-20 bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none text-left px-4 py-3 text-xs font-semibold text-fg-secondary uppercase tracking-wider">
-                Task
+                Date range
               </th>
               <th className="md:hidden p-0" />
               {displayCols.map((col, i) => (
@@ -1427,7 +1469,7 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
                       <div className="flex-1 min-w-0" dir="auto">
                         <div className="flex items-center gap-2">
                           {!job.has_accepted_worker && (
-                            <span className="text-amber-500 text-sm shrink-0" title="No worker assigned">&#9888;</span>
+                            <span className="text-amber-500 text-sm shrink-0" title="Not assigned">&#9888;</span>
                           )}
                           <span className="font-medium text-sm text-fg truncate font-content" dir="auto">{job.name}</span>
                         </div>
@@ -1500,14 +1542,14 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
               );
             })}
 
-            {/* Add Job row */}
+            {/* Add Work row */}
             <tr>
               <td className="hidden md:table-cell sticky left-0 z-[11] bg-surface relative after:absolute after:right-0 after:top-0 after:bottom-0 after:w-1.5 after:translate-x-full after:bg-gradient-to-r after:from-black/[0.06] after:to-transparent after:pointer-events-none px-4 py-3">
                 <button
                   onClick={onAddJob}
                   className="text-sm text-fg-muted hover:text-accent transition-colors font-medium"
                 >
-                  + Add Job
+                  + Add Work
                 </button>
               </td>
               <td className="md:hidden p-0" />
@@ -1539,8 +1581,21 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
           initialName={segDialog.initialName}
           initialDays={segDialog.initialDays}
           initialColor={segDialog.initialColor}
+          depPills={segDialog.phaseId != null ? deps
+            .filter(d => d.phase_id === segDialog.phaseId || d.depends_on_id === segDialog.phaseId)
+            .map(d => {
+              const isPredecessor = d.depends_on_id !== segDialog.phaseId;
+              const relatedId = isPredecessor ? d.depends_on_id : d.phase_id;
+              const related = phases.find(p => p.id === relatedId);
+              return {
+                depId: d.id,
+                label: related?.name || `#${relatedId}`,
+                direction: isPredecessor ? 'predecessor' as const : 'successor' as const,
+              };
+            }) : []}
           onSubmit={handleSegDialogSubmit}
           onDelete={segDialog.mode === 'edit' ? handleSegDialogDelete : undefined}
+          onDeleteDep={onDeleteDep}
           onCancel={() => setSegDialog(null)}
         />
       )}

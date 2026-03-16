@@ -443,7 +443,7 @@ export function RenovationView({ initialJobs, initialPhases, initialDeps, initia
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-[1400px]" data-print-hide>
-        <StatCard label="Total Jobs" value={totalTasks} />
+        <StatCard label="Total Works" value={totalTasks} />
         <StatCard label="Assigned" value={assigned} accent="text-emerald-500" />
         <StatCard label="Searching" value={searching} accent="text-blue-400" />
         {!settings.hide_prices && (
@@ -482,7 +482,7 @@ export function RenovationView({ initialJobs, initialPhases, initialDeps, initia
       {filteredJobs.length === 0 && (
         <div className="text-center py-16 text-fg-muted text-sm" data-print-hide>
           {jobs.length === 0
-            ? <>No renovation jobs yet. Click <strong>+ Add Job</strong> to get started.</>
+            ? <>No renovation works yet. Click <strong>+ Add Work</strong> to get started.</>
             : <>No jobs match the current filters.</>
           }
         </div>
