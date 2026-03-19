@@ -1354,7 +1354,7 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
             <span className="text-[10px] text-fg-muted uppercase tracking-wider font-semibold">Filter</span>
             {[
               { key: 'no-contacts', label: 'No contacts' },
-              { key: 'no-assigned', label: 'No assigned' },
+              { key: 'no-assigned', label: 'Not assigned' },
             ].map(f => (
               <button
                 key={f.key}
