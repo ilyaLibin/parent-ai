@@ -1475,6 +1475,13 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
                 const weather = dateKey ? weatherByDate.get(dateKey) : null;
                 const holiday = dateKey ? holidayByDate.get(dateKey) : null;
                 const isHolidayOff = holiday?.dayOff ?? false;
+                // For 3-day view, collect weather per day in range
+                const threeDayWeather = zoom === '3day' ? [0, 1, 2].map(offset => {
+                  const d = addDays(col.start, offset);
+                  const key = fmtDate(d);
+                  return weatherByDate.get(key) ?? null;
+                }) : null;
+                const hasThreeDayWeather = threeDayWeather?.some(w => w?.rain || w?.wind);
                 return (
                   <th key={i} className={`relative text-center px-1 py-2 text-xs border-l border-border-subtle font-normal transition-colors duration-75 ${isHolidayOff ? 'bg-rose-50/60' : i === hoveredCol ? 'bg-black/[0.04]' : col.isWeekend ? 'bg-surface-hover/40' : ''}`}>
                     <div className={`font-semibold ${i === todayColIdx ? 'text-error' : 'text-fg-secondary'}`}>{col.label}</div>
@@ -1484,6 +1491,17 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
                         className={`absolute bottom-0 left-0 right-0 h-[3px] ${weather.rain && weather.wind ? 'bg-gradient-to-r from-blue-400 to-teal-400' : weather.rain ? 'bg-blue-400' : 'bg-teal-400'}`}
                         title={[weather.rain ? `Rain ${weather.rainMm}mm` : '', weather.wind ? `Wind ${weather.windKmh}km/h` : ''].filter(Boolean).join(', ')}
                       />
+                    )}
+                    {zoom === '3day' && hasThreeDayWeather && (
+                      <div className="absolute bottom-0 left-0 right-0 h-[3px] flex">
+                        {threeDayWeather!.map((w, j) => {
+                          const hasW = w?.rain || w?.wind;
+                          const cls = !hasW ? 'bg-transparent' : w.rain && w.wind ? 'bg-gradient-to-r from-blue-400 to-teal-400' : w.rain ? 'bg-blue-400' : 'bg-teal-400';
+                          const d = addDays(col.start, j);
+                          const title = hasW ? `${fmtDate(d)}: ${[w.rain ? `Rain ${w.rainMm}mm` : '', w.wind ? `Wind ${w.windKmh}km/h` : ''].filter(Boolean).join(', ')}` : '';
+                          return <div key={j} className={`flex-1 ${cls}`} title={title} />;
+                        })}
+                      </div>
                     )}
                     {zoom === 'day' && holiday && (
                       <div className={`text-[8px] leading-tight mt-0.5 truncate max-w-[38px] ${isHolidayOff ? 'text-rose-500 font-medium' : 'text-fg-muted'}`} title={holiday.name}>
