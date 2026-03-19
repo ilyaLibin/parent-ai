@@ -21,6 +21,7 @@ import {
   getIntegration,
   saveIntegration,
 } from '@parent-ai/shared';
+import { getRenovationCalendar } from '../services/renovation-calendar.service.js';
 
 const renovation = new Hono();
 
@@ -182,6 +183,12 @@ renovation.put('/renovation/settings', async (c) => {
   };
   saveIntegration(SETTINGS_TYPE, JSON.stringify(settings));
   return c.json(settings);
+});
+
+// Calendar (weather + holidays)
+renovation.get('/renovation/calendar', async (c) => {
+  const data = await getRenovationCalendar();
+  return c.json(data);
 });
 
 export { renovation };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { RenovationJob, RenovationPhase, PhaseDependency, RenovationSettings } from './page';
+import type { RenovationJob, RenovationPhase, PhaseDependency, RenovationSettings, CalendarData } from './page';
 import { GanttChart } from './gantt-chart';
 import { JobModal } from './job-modal';
 
@@ -42,9 +42,10 @@ interface Props {
   initialPhases: RenovationPhase[];
   initialDeps: PhaseDependency[];
   initialSettings: RenovationSettings;
+  initialCalendar: CalendarData;
 }
 
-export function RenovationView({ initialJobs, initialPhases, initialDeps, initialSettings }: Props) {
+export function RenovationView({ initialJobs, initialPhases, initialDeps, initialSettings, initialCalendar }: Props) {
   const [jobs, setJobs] = useState(initialJobs);
   const [phases, setPhases] = useState(initialPhases);
   const [deps, setDeps] = useState(initialDeps);
@@ -463,6 +464,7 @@ export function RenovationView({ initialJobs, initialPhases, initialDeps, initia
         projectStart={settings.project_start}
         projectEnd={settings.project_end}
         hidePrices={settings.hide_prices}
+        calendar={initialCalendar}
         onJobClick={handleOpenEdit}
         onJobDatesChange={handleJobDatesChange}
         onPhaseDatesChange={handlePhaseDatesChange}

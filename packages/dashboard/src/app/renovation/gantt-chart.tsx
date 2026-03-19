@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import type { RenovationJob, RenovationPhase, PhaseDependency } from './page';
+import type { RenovationJob, RenovationPhase, PhaseDependency, CalendarData } from './page';
 import { nameToColor } from './utils';
 
 type ZoomLevel = 'month' | 'week' | '3day' | 'day';
@@ -15,6 +15,7 @@ interface Props {
   projectStart: string | null;
   projectEnd: string | null;
   hidePrices: boolean;
+  calendar: CalendarData;
   onJobClick: (job: RenovationJob) => void;
   onJobDatesChange: (id: number, start: string, end: string) => void;
   onPhaseDatesChange: (phaseId: number, start: string, end: string) => void;
@@ -67,13 +68,15 @@ function daysBetween(a: string, b: string): number {
   return Math.round(ms / 86400000);
 }
 
-function workDaysBetween(a: string, b: string): number {
+function workDaysBetween(a: string, b: string, holidayDaysOff?: Set<string>): number {
   let count = 0;
   let cur = parseDate(a);
   const end = parseDate(b);
   while (cur <= end) {
     const dow = cur.getDay();
-    if (dow !== 5 && dow !== 6) count++; // exclude Fri/Sat
+    if (dow !== 5 && dow !== 6) { // exclude Fri/Sat
+      if (!holidayDaysOff || !holidayDaysOff.has(fmtDate(cur))) count++;
+    }
     cur = addDays(cur, 1);
   }
   return count;
@@ -315,9 +318,10 @@ interface BarProps {
   onDoubleClick: (e: React.MouseEvent) => void;
   phaseId?: number;
   onHoverPhase?: (id: number | null) => void;
+  holidayDaysOff?: Set<string>;
 }
 
-function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, isSelected, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onClick, onDoubleClick, phaseId, onHoverPhase }: BarProps) {
+function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isDragging, isActiveDrag, isSelected, lane = 0, outsideLane = 0, barKey, onMouseDownMove, onMouseDownLeft, onMouseDownRight, onClick, onDoubleClick, phaseId, onHoverPhase, holidayDaysOff }: BarProps) {
   const [hover, setHover] = useState(false);
   const barRef = useRef<HTMLDivElement>(null);
   const useCustomColor = !!color;
@@ -405,7 +409,7 @@ function GanttBar({ barPos, color, label, startDate, endDate, statusClasses, isD
             {DAY_NAMES[parseDate(startDate).getDay()]} {fmtShort(startDate)}{startDate !== endDate && ` → ${DAY_NAMES[parseDate(endDate).getDay()]} ${fmtShort(endDate)}`}
           </div>
           <div className="text-fg-muted font-content">
-            {days + 1} day{days > 0 ? 's' : ''}{days > 0 && ` (${workDaysBetween(startDate, endDate)} w. days)`}
+            {days + 1} day{days > 0 ? 's' : ''}{days > 0 && ` (${workDaysBetween(startDate, endDate, holidayDaysOff)} w. days)`}
           </div>
         </div>,
         document.body
@@ -560,10 +564,12 @@ function RowTimeline({
   onSelectPhase,
   hoveredPhaseId,
   onHoverPhase,
-  reportRowHeight,
   totalCols,
   timelineRef: parentTimelineRef,
   hoveredCol,
+  holidayDaysOff,
+  zoom,
+  holidayByDate,
 }: {
   job: RenovationJob;
   jobPhases: RenovationPhase[];
@@ -582,10 +588,12 @@ function RowTimeline({
   onSelectPhase: (id: number, metaKey: boolean) => void;
   hoveredPhaseId: number | null;
   onHoverPhase: (id: number | null) => void;
-  reportRowHeight: (jobId: number, height: number) => void;
   totalCols: number;
   timelineRef: React.MutableRefObject<HTMLDivElement | null>;
   hoveredCol: number | null;
+  holidayDaysOff: Set<string>;
+  zoom: ZoomLevel;
+  holidayByDate: Map<string, { name: string; dayOff: boolean }>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [outsideLanes, setOutsideLanes] = useState<Map<string, number>>(new Map());
@@ -626,8 +634,6 @@ function RowTimeline({
   const baseH = Math.max(56, insideLaneCount * LANE_HEIGHT + 12);
   const rowH = baseH + Math.max(0, outsideLaneCount - 1) * OUTSIDE_LABEL_LANE_H;
 
-  useEffect(() => { reportRowHeight(job.id, rowH); }, [job.id, rowH, reportRowHeight]);
-
   const setRef = useCallback((el: HTMLDivElement | null) => {
     containerRef.current = el;
     parentTimelineRef.current = el;
@@ -644,9 +650,11 @@ function RowTimeline({
       <div ref={setRef} className="absolute inset-0">
         {/* Grid lines */}
         <div className="absolute inset-0 flex pointer-events-none">
-          {columns.map((col, i) => (
-            <div key={i} className={`flex-1 border-l border-border-subtle transition-colors duration-75 ${i === hoveredCol ? 'bg-black/[0.04]' : col.isWeekend ? 'bg-surface-hover/30' : ''}`} />
-          ))}
+          {columns.map((col, i) => {
+            const dateKey = zoom === 'day' ? fmtDate(col.start) : null;
+            const isHolidayOff = dateKey ? (holidayByDate.get(dateKey)?.dayOff ?? false) : false;
+            return <div key={i} className={`flex-1 border-l border-border-subtle transition-colors duration-75 ${isHolidayOff ? 'bg-rose-50/40' : i === hoveredCol ? 'bg-black/[0.04]' : col.isWeekend ? 'bg-surface-hover/30' : ''}`} />;
+          })}
         </div>
 
         {/* Today line */}
@@ -685,6 +693,7 @@ function RowTimeline({
                 onHoverPhase={onHoverPhase}
                 phaseId={phase.id}
                 onDoubleClick={e => onSegmentDblClick(e, phase)}
+                holidayDaysOff={holidayDaysOff}
               />
             );
           })
@@ -713,6 +722,7 @@ function RowTimeline({
                 onMouseDownRight={e => onMouseDown(e, 'job', job.id, job.start_date, job.end_date, 'right')}
                 onClick={() => {}}
                 onDoubleClick={() => onJobClick(job)}
+                holidayDaysOff={holidayDaysOff}
               />
             );
           })()
@@ -732,7 +742,6 @@ function DependencyArrows({
   lanesByJob,
   hoveredPhaseId,
   scrollContainer,
-  rowHeights,
   onDeleteDep,
 }: {
   deps: PhaseDependency[];
@@ -742,7 +751,6 @@ function DependencyArrows({
   lanesByJob: Map<number, { assignments: LaneAssignment[]; laneCount: number }>;
   hoveredPhaseId: number | null;
   scrollContainer: HTMLElement | null;
-  rowHeights: Map<number, number>;
   onDeleteDep: (depId: number) => void;
 }) {
   if (!scrollContainer || deps.length === 0 || !columns.length) return null;
@@ -755,45 +763,61 @@ function DependencyArrows({
 
   const phaseMap = new Map(phases.map(p => [p.id, p]));
 
-  // Compute row Y offsets from cumulative heights
-  // Account for thead height (approximate: ~60px for month strip + column headers)
+  // Measure actual row positions from DOM
   const table = scrollContainer.querySelector('table');
   if (!table) return null;
-  const thead = table.querySelector('thead');
-  const theadH = thead ? thead.offsetHeight : 60;
+  const tableRect = table.getBoundingClientRect();
+  const scrollTop = scrollContainer.scrollTop;
+  const scrollLeft = scrollContainer.scrollLeft;
+  const containerRect = scrollContainer.getBoundingClientRect();
 
+  // Map job IDs to actual row top positions (relative to table top)
+  const rows = table.querySelectorAll('tbody tr');
   const rowYOffset = new Map<number, number>();
-  let yAcc = theadH;
-  for (const job of jobs) {
-    rowYOffset.set(job.id, yAcc);
-    yAcc += rowHeights.get(job.id) || 56;
-  }
+  rows.forEach((row, i) => {
+    if (i < jobs.length) {
+      const rect = row.getBoundingClientRect();
+      rowYOffset.set(jobs[i].id, rect.top - tableRect.top);
+    }
+  });
 
-  // Compute X positions using the same percentage math as barPosition
   const DAY = 86400000;
   const t0 = columns[0].start.getTime();
   const t1 = columns[columns.length - 1].end.getTime() + DAY;
-  const tableW = table.offsetWidth;
+  const tableW = table.scrollWidth;
+
+  // Find the timeline td width (the actual rendering area for bars)
+  const firstTimelineTd = table.querySelector('tbody tr td[colspan]') as HTMLElement | null;
+  const timelineW = firstTimelineTd ? firstTimelineTd.offsetWidth : tableW - TASK_COL_W;
+  const timelineLeft = firstTimelineTd ? (firstTimelineTd.getBoundingClientRect().left - tableRect.left) : TASK_COL_W;
 
   function getPhaseXPx(phase: RenovationPhase, edge: 'left' | 'right'): number | null {
     const s = Math.max(parseDate(phase.start_date).getTime(), t0);
     const e = Math.min(parseDate(phase.end_date).getTime() + DAY, t1);
     if (s > e) return null;
-    const timelineW = tableW - TASK_COL_W;
-    if (edge === 'right') return TASK_COL_W + ((e - t0) / (t1 - t0)) * timelineW;
-    return TASK_COL_W + ((s - t0) / (t1 - t0)) * timelineW;
+    const leftPct = (s - t0) / (t1 - t0);
+    const rightPct = (e - t0) / (t1 - t0);
+    // Bars have 4px inset on each side
+    if (edge === 'right') return timelineLeft + rightPct * timelineW - 4;
+    return timelineLeft + leftPct * timelineW + 4;
   }
 
   function getPhaseYPx(phase: RenovationPhase): number | null {
     const rowY = rowYOffset.get(phase.job_id);
     if (rowY == null) return null;
+    // Find the timeline td in this row to get its top (bar positions are relative to this)
+    const rowIdx = jobs.findIndex(j => j.id === phase.job_id);
+    const row = rowIdx >= 0 ? rows[rowIdx] : null;
+    const timelineTd = row?.querySelector('td[colspan]') as HTMLElement | null;
+    const tdTop = timelineTd ? (timelineTd.getBoundingClientRect().top - tableRect.top) : rowY;
+
     const laneInfo = lanesByJob.get(phase.job_id);
     let lane = 0;
     if (laneInfo) {
       const assignment = laneInfo.assignments.find(a => a.phase.id === phase.id);
       if (assignment) lane = assignment.lane;
     }
-    return rowY + 6 + lane * LANE_HEIGHT + LANE_BAR_H / 2;
+    return tdTop + 6 + lane * LANE_HEIGHT + LANE_BAR_H / 2;
   }
 
   const arrows: { x1: number; y1: number; x2: number; y2: number; violated: boolean; depId: number }[] = [];
@@ -821,7 +845,7 @@ function DependencyArrows({
     <svg
       className="absolute top-0 left-0 z-[8]"
       width={tableW}
-      height={yAcc}
+      height={table.scrollHeight}
       style={{ overflow: 'visible', pointerEvents: 'none' }}
     >
       <defs>
@@ -836,18 +860,28 @@ function DependencyArrows({
         const arrowColor = a.violated ? '#ef4444' : '#000';
         const markerId = a.violated ? 'dep-arrow-red' : 'dep-arrow';
         const dx = a.x2 - a.x1;
-        const gap = 10; // small gap after predecessor before turning
+        const r = 4; // corner radius
+        const gap = 10;
+        const dy = a.y2 - a.y1;
         let path: string;
-        if (dx > gap * 2) {
+        if (Math.abs(dy) < 1) {
+          // Same row — straight horizontal line
+          path = `M${a.x1},${a.y1} H${a.x2}`;
+        } else if (a.x2 >= a.x1 - gap && a.x2 <= a.x1 + gap) {
+          // Successor is roughly below/above predecessor — go straight down, turn right
+          const sy = dy > 0 ? 1 : -1;
+          path = `M${a.x1},${a.y1} V${a.y2 - r * sy} Q${a.x1},${a.y2} ${a.x1 + r},${a.y2} H${a.x2}`;
+        } else if (dx > gap * 2) {
           // Normal: right a gap, down/up to successor row, right to successor
           const turnX = a.x1 + gap;
-          path = `M${a.x1},${a.y1} H${turnX} V${a.y2} H${a.x2}`;
+          const sy = dy > 0 ? 1 : -1;
+          path = `M${a.x1},${a.y1} H${turnX - r} Q${turnX},${a.y1} ${turnX},${a.y1 + r * sy} V${a.y2 - r * sy} Q${turnX},${a.y2} ${turnX + r},${a.y2} H${a.x2}`;
         } else {
           // Successor overlaps/before predecessor — route around below
           const turnX = a.x1 + gap;
           const belowY = Math.max(a.y1, a.y2) + 25;
           const entryX = a.x2 - gap;
-          path = `M${a.x1},${a.y1} H${turnX} V${belowY} H${entryX} V${a.y2} H${a.x2}`;
+          path = `M${a.x1},${a.y1} H${turnX - r} Q${turnX},${a.y1} ${turnX},${a.y1 + r} V${belowY - r} Q${turnX},${belowY} ${turnX - r},${belowY} H${entryX + r} Q${entryX},${belowY} ${entryX},${belowY - r} V${a.y2 + r} Q${entryX},${a.y2} ${entryX + r},${a.y2} H${a.x2}`;
         }
         return (
           <g key={i}>
@@ -893,7 +927,7 @@ interface SegmentDialogState {
 
 // ── component ──
 
-export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hidePrices, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, onCreatePhase, onUpdatePhase, onDeletePhase, onCreateDep, onDeleteDep, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
+export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hidePrices, calendar, onJobClick, onJobDatesChange, onPhaseDatesChange, onReorderJobs, onAddJob, onCreatePhase, onUpdatePhase, onDeletePhase, onCreateDep, onDeleteDep, filters, onToggleFilter, onClearFilters, totalJobCount }: Props) {
   const [zoom, setZoom] = useState<ZoomLevel>('week');
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
@@ -912,6 +946,27 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
   const columns = useMemo(() => buildColumns(zoom, range[0], range[1]), [zoom, range]);
   const showMonthStrip = zoom !== 'month';
   const monthSpans = useMemo(() => showMonthStrip ? buildMonthSpans(columns) : [], [showMonthStrip, columns]);
+
+  // Calendar lookups (weather + holidays) — only used on day zoom
+  const weatherByDate = useMemo(() => {
+    const map = new Map<string, { rain: boolean; wind: boolean; rainMm: number; windKmh: number }>();
+    for (const w of calendar.weather) map.set(w.date, w);
+    return map;
+  }, [calendar.weather]);
+
+  const holidayByDate = useMemo(() => {
+    const map = new Map<string, { name: string; dayOff: boolean }>();
+    for (const h of calendar.holidays) map.set(h.date, h);
+    return map;
+  }, [calendar.holidays]);
+
+  const holidayDaysOff = useMemo(() => {
+    const set = new Set<string>();
+    for (const h of calendar.holidays) {
+      if (h.dayOff) set.add(h.date);
+    }
+    return set;
+  }, [calendar.holidays]);
 
   const phasesByJob = useMemo(() => {
     const map = new Map<number, RenovationPhase[]>();
@@ -1166,17 +1221,6 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
   }, [displayCols.length]);
   const onTimelineMouseLeave = useCallback(() => { hoveredColRef.current = null; setHoveredCol(null); }, []);
 
-  // ── row heights for dependency arrows ──
-  const [rowHeights, setRowHeights] = useState<Map<number, number>>(new Map());
-  const reportRowHeight = useCallback((jobId: number, height: number) => {
-    setRowHeights(prev => {
-      if (prev.get(jobId) === height) return prev;
-      const next = new Map(prev);
-      next.set(jobId, height);
-      return next;
-    });
-  }, []);
-
   // ── phase selection + dependency linking ──
   const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(null);
   const [hoveredPhaseId, setHoveredPhaseId] = useState<number | null>(null);
@@ -1426,12 +1470,29 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
                 Date range
               </th>
               <th className="md:hidden p-0" />
-              {displayCols.map((col, i) => (
-                <th key={i} className={`text-center px-1 py-2 text-xs border-l border-border-subtle font-normal transition-colors duration-75 ${i === hoveredCol ? 'bg-black/[0.04]' : col.isWeekend ? 'bg-surface-hover/40' : ''}`}>
-                  <div className={`font-semibold ${i === todayColIdx ? 'text-error' : 'text-fg-secondary'}`}>{col.label}</div>
-                  {col.sublabel && <div className={`text-[10px] ${i === todayColIdx ? 'text-error/70' : 'text-fg-muted'}`}>{col.sublabel}</div>}
-                </th>
-              ))}
+              {displayCols.map((col, i) => {
+                const dateKey = zoom === 'day' ? fmtDate(col.start) : null;
+                const weather = dateKey ? weatherByDate.get(dateKey) : null;
+                const holiday = dateKey ? holidayByDate.get(dateKey) : null;
+                const isHolidayOff = holiday?.dayOff ?? false;
+                return (
+                  <th key={i} className={`relative text-center px-1 py-2 text-xs border-l border-border-subtle font-normal transition-colors duration-75 ${isHolidayOff ? 'bg-rose-50/60' : i === hoveredCol ? 'bg-black/[0.04]' : col.isWeekend ? 'bg-surface-hover/40' : ''}`}>
+                    <div className={`font-semibold ${i === todayColIdx ? 'text-error' : 'text-fg-secondary'}`}>{col.label}</div>
+                    {col.sublabel && <div className={`text-[10px] ${i === todayColIdx ? 'text-error/70' : 'text-fg-muted'}`}>{col.sublabel}</div>}
+                    {zoom === 'day' && (weather?.rain || weather?.wind) && (
+                      <div
+                        className={`absolute bottom-0 left-0 right-0 h-[3px] ${weather.rain && weather.wind ? 'bg-gradient-to-r from-blue-400 to-teal-400' : weather.rain ? 'bg-blue-400' : 'bg-teal-400'}`}
+                        title={[weather.rain ? `Rain ${weather.rainMm}mm` : '', weather.wind ? `Wind ${weather.windKmh}km/h` : ''].filter(Boolean).join(', ')}
+                      />
+                    )}
+                    {zoom === 'day' && holiday && (
+                      <div className={`text-[8px] leading-tight mt-0.5 truncate max-w-[38px] ${isHolidayOff ? 'text-rose-500 font-medium' : 'text-fg-muted'}`} title={holiday.name}>
+                        {holiday.name.replace(/\s*\(.*\)/, '').split(' ').slice(0, 2).join(' ')}
+                      </div>
+                    )}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
 
@@ -1533,10 +1594,12 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
                     onSelectPhase={handlePhaseClick}
                     hoveredPhaseId={hoveredPhaseId}
                     onHoverPhase={setHoveredPhaseId}
-                    reportRowHeight={reportRowHeight}
                     totalCols={totalCols}
                     timelineRef={timelineRef}
                     hoveredCol={hoveredCol}
+                    holidayDaysOff={holidayDaysOff}
+                    zoom={zoom}
+                    holidayByDate={holidayByDate}
                   />
                 </tr>
               );
@@ -1567,7 +1630,6 @@ export function GanttChart({ jobs, phases, deps, projectStart, projectEnd, hideP
           lanesByJob={lanesByJob}
           hoveredPhaseId={hoveredPhaseId}
           scrollContainer={scrollRef.current}
-          rowHeights={rowHeights}
           onDeleteDep={onDeleteDep}
         />
       </div>

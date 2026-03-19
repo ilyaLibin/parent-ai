@@ -63,6 +63,25 @@ export interface RenovationSettings {
   hide_prices: boolean;
 }
 
+export interface WeatherDay {
+  date: string;
+  rain: boolean;
+  wind: boolean;
+  rainMm: number;
+  windKmh: number;
+}
+
+export interface HolidayDay {
+  date: string;
+  name: string;
+  dayOff: boolean;
+}
+
+export interface CalendarData {
+  weather: WeatherDay[];
+  holidays: HolidayDay[];
+}
+
 async function getJobs(): Promise<RenovationJob[]> {
   const res = await fetch(`${API_URL}/renovation/jobs`, { cache: 'no-store' });
   if (!res.ok) return [];
@@ -87,7 +106,13 @@ async function getSettings(): Promise<RenovationSettings> {
   return res.json();
 }
 
+async function getCalendar(): Promise<CalendarData> {
+  const res = await fetch(`${API_URL}/renovation/calendar`, { cache: 'no-store' });
+  if (!res.ok) return { weather: [], holidays: [] };
+  return res.json();
+}
+
 export default async function RenovationPage() {
-  const [jobs, phases, deps, settings] = await Promise.all([getJobs(), getPhases(), getDependencies(), getSettings()]);
-  return <RenovationView initialJobs={jobs} initialPhases={phases} initialDeps={deps} initialSettings={settings} />;
+  const [jobs, phases, deps, settings, calendar] = await Promise.all([getJobs(), getPhases(), getDependencies(), getSettings(), getCalendar()]);
+  return <RenovationView initialJobs={jobs} initialPhases={phases} initialDeps={deps} initialSettings={settings} initialCalendar={calendar} />;
 }
