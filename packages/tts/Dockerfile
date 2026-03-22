@@ -17,4 +17,4 @@ COPY packages/tts/app.py .
 
 EXPOSE 5050
 
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "1", "--threads", "4", "--timeout", "120", "app:app"]

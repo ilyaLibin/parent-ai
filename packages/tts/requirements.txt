@@ -5,3 +5,4 @@ flask-limiter>=3.0
 soundfile
 numpy
 misaki[en]>=0.9.4
+gunicorn>=22.0

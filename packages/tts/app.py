@@ -2,6 +2,8 @@ import io
 import os
 import json
 import base64
+import time
+import logging
 import functools
 import numpy as np
 import soundfile as sf
@@ -12,6 +14,9 @@ from flask_limiter.util import get_remote_address
 from kokoro import KPipeline
 
 app = Flask(__name__)
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logger = logging.getLogger('tts')
 CORS(app)
 
 API_TOKEN = os.environ.get('TTS_API_TOKEN', '')
@@ -84,7 +89,13 @@ def parse_segments():
         return [{'text': text, 'voice': voice}], speed, None
 
 
-def generate_chunks(text, voice, speed, split_pattern=r'[.!?,;:]+'):
+def text_preview(text, max_len=50):
+    """Return first max_len chars of text for logging."""
+    text = text.strip().replace('\n', ' ')
+    return text[:max_len] + '...' if len(text) > max_len else text
+
+
+def generate_chunks(text, voice, speed, split_pattern=r'[.!?]+'):
     """Run Kokoro pipeline and yield (graphemes, audio) tuples."""
     for gs, _ps, audio in pipeline(text, voice=voice, speed=speed, split_pattern=split_pattern):
         if audio is not None and len(audio) > 0:
@@ -121,22 +132,39 @@ def tts():
     """
     segments, speed, error = parse_segments()
     if error:
+        logger.warning('TTS bad request: %s', error)
         return jsonify({'error': error}), 400
 
-    all_audio = []
-    for _gs, audio, _voice in generate_all_segments(segments, speed):
-        all_audio.append(audio)
+    total_chars = sum(len(s['text']) for s in segments)
+    voices = ', '.join(dict.fromkeys(s['voice'] for s in segments))
+    preview = text_preview(segments[0]['text'])
+    logger.info('TTS request: voices=%s chars=%d speed=%s text="%s"', voices, total_chars, speed, preview)
 
-    if not all_audio:
-        return jsonify({'error': 'No audio generated'}), 500
+    start = time.time()
+    try:
+        all_audio = []
+        for _gs, audio, _voice in generate_all_segments(segments, speed):
+            all_audio.append(audio)
 
-    full_audio = np.concatenate(all_audio)
-    buf = io.BytesIO()
-    sf.write(buf, full_audio, SAMPLE_RATE, format='WAV', subtype='PCM_16')
-    buf.seek(0)
+        if not all_audio:
+            logger.error('TTS failed: no audio generated for text="%s"', preview)
+            return jsonify({'error': 'No audio generated'}), 500
 
-    return Response(buf.read(), mimetype='audio/wav',
-                    headers={'Content-Disposition': 'inline; filename="speech.wav"'})
+        full_audio = np.concatenate(all_audio)
+        buf = io.BytesIO()
+        sf.write(buf, full_audio, SAMPLE_RATE, format='WAV', subtype='PCM_16')
+        buf.seek(0)
+        audio_bytes = buf.read()
+
+        duration = time.time() - start
+        logger.info('TTS complete: voices=%s duration=%.1fs size=%.1fKB chars=%d', voices, duration, len(audio_bytes) / 1024, total_chars)
+
+        return Response(audio_bytes, mimetype='audio/wav',
+                        headers={'Content-Disposition': 'inline; filename="speech.wav"'})
+    except Exception as e:
+        duration = time.time() - start
+        logger.error('TTS error after %.1fs: %s', duration, e, exc_info=True)
+        return jsonify({'error': 'TTS generation failed'}), 500
 
 
 @app.route('/tts/stream', methods=['GET', 'POST'])
@@ -154,14 +182,32 @@ def tts_stream():
     """
     segments, speed, error = parse_segments()
     if error:
+        logger.warning('TTS stream bad request: %s', error)
         return jsonify({'error': error}), 400
 
+    total_chars = sum(len(s['text']) for s in segments)
+    voices = ', '.join(dict.fromkeys(s['voice'] for s in segments))
+    preview = text_preview(segments[0]['text'])
+    logger.info('TTS stream request: voices=%s chars=%d speed=%s text="%s"', voices, total_chars, speed, preview)
+
+    start = time.time()
+
     def generate_ndjson():
-        for gs, chunk, voice in generate_all_segments(segments, speed):
-            pcm = (np.clip(chunk, -1.0, 1.0) * 32767).astype(np.int16)
-            audio_b64 = base64.b64encode(pcm.tobytes()).decode('ascii')
-            yield json.dumps({'text': gs, 'voice': voice, 'audio': audio_b64, 'samples': len(pcm)}) + '\n'
-        yield json.dumps({'done': True}) + '\n'
+        chunks = 0
+        total_samples = 0
+        try:
+            for gs, chunk, voice in generate_all_segments(segments, speed):
+                pcm = (np.clip(chunk, -1.0, 1.0) * 32767).astype(np.int16)
+                audio_b64 = base64.b64encode(pcm.tobytes()).decode('ascii')
+                yield json.dumps({'text': gs, 'voice': voice, 'audio': audio_b64, 'samples': len(pcm)}) + '\n'
+                chunks += 1
+                total_samples += len(pcm)
+            yield json.dumps({'done': True}) + '\n'
+            duration = time.time() - start
+            logger.info('TTS stream complete: voices=%s chunks=%d duration=%.1fs samples=%d chars=%d', voices, chunks, duration, total_samples, total_chars)
+        except Exception as e:
+            duration = time.time() - start
+            logger.error('TTS stream error after %.1fs at chunk %d: %s', duration, chunks, e, exc_info=True)
 
     return Response(stream_with_context(generate_ndjson()),
                     mimetype='application/x-ndjson',
