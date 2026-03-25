@@ -1,8 +1,36 @@
 import { Hono } from 'hono';
-import { getCronJob, getTaskRuns, getTaskRun } from '@parent-ai/shared';
+import { getCronJob, getCronJobs, createCronJob, getTaskRuns, getTaskRun } from '@parent-ai/shared';
 import { runGenericAgent } from '../agents/generic.agent.js';
 
 const task = new Hono();
+
+const TELEGRAM_CHAT_TASK = 'telegram-chat';
+
+function getOrCreateChatTaskId(): number {
+  const existing = getCronJobs().find((j) => j.name === TELEGRAM_CHAT_TASK);
+  if (existing) return existing.id;
+  const job = createCronJob({ name: TELEGRAM_CHAT_TASK, schedule: '', enabled: false, model: 'haiku' });
+  return job.id;
+}
+
+let chatTaskId: number | null = null;
+
+task.post('/agent/run', async (c) => {
+  const body = await c.req.json<{ prompt?: string }>();
+  if (!body.prompt) return c.json({ error: 'prompt is required' }, 400);
+
+  if (!chatTaskId) chatTaskId = getOrCreateChatTaskId();
+
+  console.log(`[api] Ad-hoc agent run: "${body.prompt.substring(0, 80)}"`);
+  const result = await runGenericAgent({
+    taskId: chatTaskId,
+    prompt: body.prompt,
+    model: 'haiku',
+  });
+
+  console.log(`[api] Ad-hoc agent done: success=${result.success}, steps=${result.steps.length}`);
+  return c.json(result);
+});
 
 task.post('/task/:id/execute', async (c) => {
   const id = Number(c.req.param('id'));

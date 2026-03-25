@@ -68,6 +68,10 @@ export async function triggerAvivSchoolSummary(): Promise<SummaryResult> {
   return request('/summary/aviv_school', { method: 'POST' });
 }
 
+export async function runAgent(prompt: string): Promise<AgentResult> {
+  return request('/agent/run', { method: 'POST', body: { prompt } });
+}
+
 export async function executeTaskByName(name: string): Promise<AgentResult> {
   // Look up task by name
   const jobs = await request<CronJob[]>(`/cron-jobs?name=${encodeURIComponent(name)}`);
