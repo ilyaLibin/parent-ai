@@ -22,9 +22,9 @@ export interface CalendarData {
   holidays: Holiday[];
 }
 
-// Haifa coordinates
-const LAT = 32.79;
-const LON = 34.99;
+// Weather location — override via LOCATION_LAT / LOCATION_LON env vars
+const LAT = parseFloat(process.env.LOCATION_LAT || '32.79');
+const LON = parseFloat(process.env.LOCATION_LON || '34.99');
 
 let cache: { data: CalendarData; ts: number } | null = null;
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour

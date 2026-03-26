@@ -38,20 +38,20 @@ summaryFeature.command('today', async (ctx) => {
   }
 });
 
-summaryFeature.command('aviv', async (ctx) => {
-  console.log(`[bot] /aviv from ${ctx.from?.first_name || 'unknown'}`);
-  await ctx.reply('Generating Aviv school daily report (agent mode)...');
+summaryFeature.command('report', async (ctx) => {
+  console.log(`[bot] /report from ${ctx.from?.first_name || 'unknown'}`);
+  await ctx.reply('Generating school daily report (agent mode)...');
   try {
-    const result = await api.executeTaskByName('aviv-daily-report');
+    const result = await api.executeTaskByName('school-daily-report');
     if (result.success) {
-      console.log(`[bot] /aviv done: ${result.steps?.length ?? 0} steps`);
+      console.log(`[bot] /report done: ${result.steps?.length ?? 0} steps`);
       await ctx.reply(`Report generated and sent!`);
     } else {
-      console.error(`[bot] /aviv failed: ${result.error}`);
+      console.error(`[bot] /report failed: ${result.error}`);
       await ctx.reply(`Report failed: ${result.error}`);
     }
   } catch (err) {
-    console.error('[bot] /aviv error:', err);
+    console.error('[bot] /report error:', err);
     await ctx.reply(`Error: ${err instanceof Error ? err.message : String(err)}`);
   }
 });

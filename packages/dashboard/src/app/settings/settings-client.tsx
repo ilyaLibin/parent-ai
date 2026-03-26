@@ -249,7 +249,7 @@ export function SettingsClient({ initialStatus, initialConfig }: Props) {
               value={redirectUri}
               onChange={(e) => setRedirectUri(e.target.value)}
               className="w-full input-inset rounded-lg px-3 py-2 text-sm"
-              placeholder="http://brain.local:3033/calendar/callback"
+              placeholder="http://localhost:3033/calendar/callback"
             />
           </div>
           <button

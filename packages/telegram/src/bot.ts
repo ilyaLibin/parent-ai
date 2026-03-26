@@ -20,7 +20,7 @@ bot.use(chatFeature);
 // Register commands for Telegram autocomplete
 bot.api.setMyCommands([
   { command: 'today', description: "Today's school schedule" },
-  { command: 'aviv', description: 'Daily school report (agent)' },
+  { command: 'report', description: 'Daily school report (agent)' },
   { command: 'summary', description: 'Summarize all groups' },
   { command: 'status', description: 'System status' },
   { command: 'groups', description: 'List tracked groups' },

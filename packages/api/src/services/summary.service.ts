@@ -6,15 +6,8 @@ import { summarizeGroup, SummaryResult } from './summarize.js';
 import { sendTelegram } from './telegram.service.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// Knowledge files are in the shared package
 const SHARED_PKG = join(__dirname, '..', '..', '..', 'shared');
 const KNOWLEDGE_DIR = join(SHARED_PKG, 'knowledge');
-
-// Aviv's school group IDs (first two tracked groups)
-const AVIV_SCHOOL_GROUPS = [
-  '120363331200450674@g.us',
-  '120363327802106026@g.us',
-];
 
 const HEBREW_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
@@ -68,9 +61,9 @@ export async function dailySummary() {
   return rangeSummary({ hoursBack: 24 });
 }
 
-// --- Aviv school summary ---
+// --- School summary (configurable via knowledge files) ---
 
-export async function avivSchoolSummary() {
+export async function schoolSummary(opts?: { groupIds?: string[]; promptFile?: string; scheduleFile?: string }) {
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -78,8 +71,11 @@ export async function avivSchoolSummary() {
   const todayDay = HEBREW_DAYS[now.getDay()];
   const tomorrowDay = HEBREW_DAYS[tomorrow.getDay()];
 
-  const promptTemplate = readFileSync(join(KNOWLEDGE_DIR, 'aviv_school_prompt.md'), 'utf-8');
-  const schedule = readFileSync(join(KNOWLEDGE_DIR, 'aviv_school_schedule.md'), 'utf-8');
+  const promptFileName = opts?.promptFile || 'example_school_prompt.md';
+  const scheduleFileName = opts?.scheduleFile || 'example_school_schedule.md';
+
+  const promptTemplate = readFileSync(join(KNOWLEDGE_DIR, promptFileName), 'utf-8');
+  const schedule = readFileSync(join(KNOWLEDGE_DIR, scheduleFileName), 'utf-8');
 
   const prompt = promptTemplate
     .replace('{{today}}', `יום ${todayDay} (${now.toLocaleDateString('he-IL')})`)
@@ -87,7 +83,7 @@ export async function avivSchoolSummary() {
     .replace('{{schedule}}', schedule);
 
   return rangeSummary({
-    groupIds: AVIV_SCHOOL_GROUPS,
+    groupIds: opts?.groupIds,
     hoursBack: 24,
     customPrompt: prompt,
   });

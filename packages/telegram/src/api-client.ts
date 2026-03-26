@@ -64,10 +64,6 @@ export async function triggerDailySummary(): Promise<SummaryResult> {
   return request('/summary/daily', { method: 'POST' });
 }
 
-export async function triggerAvivSchoolSummary(): Promise<SummaryResult> {
-  return request('/summary/aviv_school', { method: 'POST' });
-}
-
 export async function runAgent(prompt: string): Promise<AgentResult> {
   return request('/agent/run', { method: 'POST', body: { prompt } });
 }

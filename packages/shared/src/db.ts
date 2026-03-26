@@ -258,34 +258,35 @@ const shouldSeed = !db.prepare(`SELECT value FROM _meta WHERE key = 'seeded_v2'`
 if (shouldSeed) {
   const now = Date.now();
 
-  const AVIV_DAILY_REPORT_PROMPT = `You are a school assistant for Aviv's parents. Your job is to:
-1. Fetch recent messages from Aviv's school WhatsApp groups (group IDs: 120363331200450674@g.us, 120363327802106026@g.us)
+  // Example seed tasks — customize these for your child's school groups and schedule.
+  // See knowledge/example_school_prompt.md and example_school_schedule.md for templates.
+
+  const SCHOOL_DAILY_REPORT_PROMPT = `You are a school assistant. Your job is to:
+1. Fetch recent messages from the school WhatsApp groups
 2. If any messages contain images (type "image"), transcribe them — they often contain homework assignments or important notices
-3. Look up the school schedule from the knowledge base (name: "aviv_school_schedule")
-4. Combine all information with the school schedule to generate a clear, actionable daily report in Hebrew
+3. Look up the school schedule from the knowledge base (name: "example_school_schedule")
+4. Combine all information with the school schedule to generate a clear, actionable daily report
 5. Send the report via Telegram
 
 ## Context
-- Aviv is in class ב1 (2nd grade)
-- His main teacher is Vered (ורד)
 - Today is: {{today}}
 - Tomorrow is: {{tomorrow}}
 
-## Report format (in Hebrew)
+## Report format
 The Telegram message should include:
-- 📚 *שיעורי בית* — homework assignments found in messages or images
-- 📋 *מערכת שעות למחר* — tomorrow's lessons from the schedule
-- 📌 *דברים להביא* — things to bring to school
-- ⚠️ *הודעות חשובות* — important announcements or schedule changes
-- ✅ *פעולות נדרשות* — action items for parents
+- *Homework* — homework assignments found in messages or images
+- *Tomorrow's schedule* — tomorrow's lessons from the schedule
+- *Things to bring* — things to bring to school
+- *Important notices* — important announcements or schedule changes
+- *Action items* — action items for parents
 
-Keep it short, clear, and in Hebrew. Use bullet points. Skip empty sections.
+Keep it short and clear. Use bullet points. Skip empty sections.
 Use Telegram Markdown: *bold* for headers.
 
-Generate the daily school report for tomorrow ({{tomorrow}}). Start by fetching messages from the last 24 hours from Aviv's school groups, then look up the schedule from knowledge.`;
+Generate the daily school report for tomorrow ({{tomorrow}}). Start by fetching messages from the last 24 hours, then look up the schedule from knowledge.`;
 
-  const TODAYS_SCHEDULE_PROMPT = `You are a school assistant for Aviv's parents. Aviv is in class ב1 (2nd grade).
-Look up the school schedule from the knowledge base (name: "aviv_school_schedule"), extract today's lessons, and send a short Telegram message in Hebrew.
+  const TODAYS_SCHEDULE_PROMPT = `You are a school assistant.
+Look up the school schedule from the knowledge base (name: "example_school_schedule"), extract today's lessons, and send a short Telegram message.
 
 Format the message as a clear list with lesson number, subject, and teacher.
 Add a short friendly greeting at the top. Keep it concise.
@@ -296,7 +297,7 @@ Today is {{today}} ({{date}}). Look up the school schedule from knowledge and se
   db.prepare(`
     INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, prompt, model, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run('aviv-daily-report', '0 20 * * 0-4', '', 'POST', null, 0, AVIV_DAILY_REPORT_PROMPT, 'sonnet', now, now);
+  `).run('school-daily-report', '0 20 * * 0-4', '', 'POST', null, 0, SCHOOL_DAILY_REPORT_PROMPT, 'sonnet', now, now);
 
   db.prepare(`
     INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, created_at, updated_at)
@@ -306,7 +307,7 @@ Today is {{today}} ({{date}}). Look up the school schedule from knowledge and se
   db.prepare(`
     INSERT OR IGNORE INTO cron_jobs (name, schedule, endpoint, method, body, enabled, prompt, model, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run('todays-schedule', '40 16 * * *', '', 'POST', null, 1, TODAYS_SCHEDULE_PROMPT, 'sonnet', now, now);
+  `).run('todays-schedule', '40 16 * * *', '', 'POST', null, 0, TODAYS_SCHEDULE_PROMPT, 'sonnet', now, now);
 
   db.prepare(`INSERT INTO _meta (key, value) VALUES (?, ?)`).run('seeded_v2', String(now));
 }

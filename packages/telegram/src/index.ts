@@ -18,7 +18,7 @@ async function main() {
 
   bot.start({
     onStart: () => {
-      console.log('Bot is running! Send /aviv, /summary, /status, or /groups.');
+      console.log('Bot is running! Send /report, /summary, /status, or /groups.');
     },
   });
 }

@@ -100,7 +100,7 @@ export function TaskForm({ initial }: TaskFormProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full input-inset rounded-lg px-3 py-2 text-sm"
-            placeholder="e.g. aviv-daily-report"
+            placeholder="e.g. school-daily-report"
           />
         </div>
 

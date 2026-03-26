@@ -12,7 +12,7 @@
 set -e
 
 SERVICE=$1
-MAC_MINI="${MAC_MINI_HOST:-ilyalibin@brain.local}"
+MAC_MINI="${MAC_MINI_HOST:-user@your-server.local}"
 REMOTE_DIR="${MAC_MINI_DIR:-~/parent-ai}"
 
 if [ -z "$SERVICE" ]; then

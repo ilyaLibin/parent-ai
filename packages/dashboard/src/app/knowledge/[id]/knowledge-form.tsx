@@ -76,7 +76,7 @@ export function KnowledgeForm({ initial }: KnowledgeFormProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full input-inset rounded-lg px-3 py-2 text-sm"
-            placeholder="e.g. aviv_school_schedule"
+            placeholder="e.g. school_schedule"
           />
         </div>
 
