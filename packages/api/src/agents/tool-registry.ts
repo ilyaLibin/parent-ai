@@ -11,7 +11,7 @@ import {
   getActionItems,
   type Group,
 } from '@parent-ai/shared';
-import { sendTelegram } from '../services/telegram.service.js';
+import { sendTelegram, sendTelegramAudio } from '../services/telegram.service.js';
 import { createCalendarEvent as createGCalEvent } from '../services/google-calendar.service.js';
 
 const anthropic = new Anthropic();
@@ -66,6 +66,25 @@ export const toolDefinitions: Anthropic.Tool[] = [
         text: {
           type: 'string',
           description: 'The message text to send. Supports Telegram Markdown formatting.',
+        },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'sendTelegramAudio',
+    description:
+      'Convert text to speech and send it as an audio message to the user via Telegram. Use this when the user asks for a voice/audio message or when audio delivery is more appropriate.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        text: {
+          type: 'string',
+          description: 'The text to convert to speech and send as audio.',
+        },
+        voice: {
+          type: 'string',
+          description: 'TTS voice to use. Defaults to "af_heart". Options include: af_heart, af_bella, af_nicole, af_sarah, am_adam, am_michael, etc.',
         },
       },
       required: ['text'],
@@ -267,6 +286,20 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
       return {
         success: false,
         error: `Failed to send Telegram message: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  },
+
+  async sendTelegramAudio(args) {
+    const text = args.text as string;
+    const voice = (args.voice as string) || 'af_heart';
+    try {
+      await sendTelegramAudio(text, voice);
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: `Failed to send audio: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
   },

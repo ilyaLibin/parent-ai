@@ -20,6 +20,10 @@ services:
     volumes:
       - ./data:/app/data
     env_file: .env
+    environment:
+      TTS_URL: http://tts:5050
+    depends_on:
+      - tts
     restart: unless-stopped
 
   telegram:
