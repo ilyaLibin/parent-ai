@@ -65,7 +65,7 @@ Edit `.env` with your keys:
 ANTHROPIC_API_KEY=sk-ant-...
 TELEGRAM_BOT_TOKEN=123456789:ABC...
 TELEGRAM_CHAT_ID=123456789
-TRACKED_GROUP_IDS=              # Leave empty for now, fill in after step 3
+TRACKED_GROUP_IDS=              # Optional — seed tracked groups (can also manage via dashboard)
 ```
 
 ### 3. Link WhatsApp
@@ -74,7 +74,7 @@ TRACKED_GROUP_IDS=              # Leave empty for now, fill in after step 3
 npm run dev:listener
 ```
 
-Scan the QR code with WhatsApp (Settings → Linked Devices → Link a Device). Once connected, you'll see group IDs in the console. Copy the IDs of groups you want to track into `TRACKED_GROUP_IDS` in `.env`, then restart the listener.
+Scan the QR code with WhatsApp (Settings → Linked Devices → Link a Device). Once connected, the listener discovers your groups automatically. You can then toggle which groups to track via the dashboard, or seed them via `TRACKED_GROUP_IDS` in `.env`.
 
 ### 4. Start the services
 

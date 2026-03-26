@@ -36,7 +36,7 @@ npm run dev:listener
 ```
 A QR code appears in the terminal. Scan it with WhatsApp (Settings → Linked Devices → Link a Device). After linking, the listener saves auth state to `./auth_state/` so future restarts reconnect automatically.
 
-Once connected, you'll see group messages in the console. Note the group IDs you want to track and add them to `TRACKED_GROUP_IDS` in `.env`.
+Once connected, you'll see group messages in the console. Note the group IDs you want to track — either add them to `TRACKED_GROUP_IDS` in `.env` for initial seeding, or toggle tracking via the dashboard or API (`PUT /resolve-group`).
 
 ### 5. Start Services
 ```bash
@@ -195,7 +195,7 @@ Markdown documents stored in the `knowledge` DB table. Seeded from `packages/sha
 | Variable | Required | Description |
 |----------|----------|-------------|
 | ANTHROPIC_API_KEY | Yes | Claude API key |
-| TRACKED_GROUP_IDS | Yes | Comma-separated WhatsApp group IDs to monitor |
+| TRACKED_GROUP_IDS | No | Comma-separated WhatsApp group IDs to seed as tracked on startup (after that, manage via dashboard) |
 | TELEGRAM_BOT_TOKEN | Yes | Telegram bot token from @BotFather |
 | TELEGRAM_CHAT_ID | Yes | Your personal Telegram chat ID |
 | DB_PATH | No | SQLite path (default: ./data/messages.db) |
