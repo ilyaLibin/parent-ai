@@ -9,6 +9,7 @@ import { actionItems } from './routes/action-items.routes.js';
 import { ai } from './routes/ai.routes.js';
 import { integrations } from './routes/integrations.routes.js';
 import { calendar } from './routes/calendar.routes.js';
+import { googleTasks } from './routes/google-tasks.routes.js';
 import { renovation } from './routes/renovation.routes.js';
 
 const app = new Hono();
@@ -38,6 +39,7 @@ app.route('/', actionItems);
 app.route('/', ai);
 app.route('/', integrations);
 app.route('/', calendar);
+app.route('/', googleTasks);
 app.route('/', renovation);
 
 export { app };

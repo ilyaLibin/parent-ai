@@ -45,6 +45,7 @@ calendar.get('/calendar/status', (c) => {
     configured: true,
     connected: !!token,
     calendarId: config.calendar_id || null,
+    taskListId: config.task_list_id || null,
     expiresAt: token?.expiry_date || null,
   });
 });

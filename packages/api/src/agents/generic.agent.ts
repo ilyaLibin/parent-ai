@@ -11,6 +11,7 @@ const MODEL_MAP: Record<string, string> = {
 };
 
 const HEBREW_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+const FAMILY_TIMEZONE = 'Asia/Jerusalem';
 
 type StepEntry =
   | { type: 'text'; content: string }
@@ -42,10 +43,32 @@ function injectTemplateVars(text: string): string {
     .replace(/\[@([^\]]+)\]\(knowledge:(\d+)\)/g, 'knowledge document "$1" (ID: $2)');
 }
 
+// Computed fresh per run (never cached) so the model always grounds relative dates
+// ("today", "tomorrow", "next Monday") in the real current date instead of guessing.
+function getCurrentDateInfo(): string {
+  const now = new Date();
+  const isoLocal = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: FAMILY_TIMEZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).format(now).replace(' ', 'T');
+  const dayName = new Intl.DateTimeFormat('en-US', { timeZone: FAMILY_TIMEZONE, weekday: 'long' }).format(now);
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: FAMILY_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(tomorrow);
+
+  return `Current date and time (${FAMILY_TIMEZONE}): ${isoLocal} (${dayName}). Tomorrow's date is ${tomorrowDate}.
+When resolving relative dates/times ("today", "tomorrow", "next Monday", "in an hour", etc.) for tool calls (e.g. createCalendarEvent, createTask), always compute them from this timestamp — never guess or rely on your own sense of the current date.`;
+}
+
+type SupportedImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+
 export async function runGenericAgent(opts: {
   taskId: number;
   prompt: string;
   model?: string | null;
+  image?: { data: string; mediaType: string };
 }): Promise<AgentResult> {
   const modelKey = opts.model || 'sonnet';
   const modelId = MODEL_MAP[modelKey] || MODEL_MAP.sonnet;
@@ -69,9 +92,12 @@ Rules:
 - Do NOT assume the user wants notifications or reports sent anywhere unless stated.
 - When the user asks for "all messages" or doesn't specify a time range, use a large hoursBack value (e.g. 720 for 30 days) to capture as much history as possible.
 - Follow the user's instructions precisely — don't add extra steps.
-- When transcribing images: be selective. Start with 1-2 images that look relevant based on context (sender, timing, surrounding messages). If an image turns out to be irrelevant (e.g. a sticker, meme, or off-topic photo), skip remaining images from the same sender. Don't blindly transcribe every image.`,
+- When transcribing images: be selective. Start with 1-2 images that look relevant based on context (sender, timing, surrounding messages). If an image turns out to be irrelevant (e.g. a sticker, meme, or off-topic photo), skip remaining images from the same sender. Don't blindly transcribe every image.
+- createCalendarEvent and createTask are user-facing (Google Calendar / Google Tasks) — use them when the user directly asks to schedule or add something. createActionItem is an internal record used only by the scheduled report tasks that scan WhatsApp groups for homework/deadlines — do not use it for direct user requests.`,
       cache_control: { type: 'ephemeral' },
     },
+    // Not cached — must reflect the real current date on every run.
+    { type: 'text', text: getCurrentDateInfo() },
   ];
 
   // Mark last tool for caching so the full tool array is cached
@@ -82,7 +108,22 @@ Rules:
   );
 
   const messages: Anthropic.MessageParam[] = [
-    { role: 'user', content: prompt },
+    {
+      role: 'user',
+      content: opts.image
+        ? [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: opts.image.mediaType as SupportedImageMediaType,
+                data: opts.image.data,
+              },
+            },
+            { type: 'text', text: prompt },
+          ]
+        : prompt,
+    },
   ];
 
   let resultText: string | null = null;

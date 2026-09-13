@@ -13,6 +13,7 @@ import {
 } from '@parent-ai/shared';
 import { sendTelegram, sendTelegramAudio } from '../services/telegram.service.js';
 import { createCalendarEvent as createGCalEvent } from '../services/google-calendar.service.js';
+import { createTask as createGTask, listTasks as listGTasks } from '../services/google-tasks.service.js';
 
 const anthropic = new Anthropic();
 
@@ -202,6 +203,43 @@ export const toolDefinitions: Anthropic.Tool[] = [
       required: ['summary', 'startDate', 'isAllDay'],
     },
   },
+  {
+    name: 'createTask',
+    description:
+      "Create a to-do entry on the family's Google Tasks list. Use this for reminders and to-dos that don't have a specific date/time (unlike createCalendarEvent, which is for scheduled events).",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: {
+          type: 'string',
+          description: 'The task title.',
+        },
+        notes: {
+          type: 'string',
+          description: 'Optional additional details for the task.',
+        },
+        due: {
+          type: 'string',
+          description: 'Optional due date in YYYY-MM-DD format (Google Tasks only supports a due date, not a due time).',
+        },
+      },
+      required: ['title'],
+    },
+  },
+  {
+    name: 'listTasks',
+    description: "List existing to-do entries on the family's Google Tasks list. Use this before creating a task to avoid duplicates.",
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        showCompleted: {
+          type: 'boolean',
+          description: 'Whether to include already-completed tasks. Defaults to false.',
+        },
+      },
+      required: [],
+    },
+  },
 ];
 
 const toolImplementations: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
@@ -338,6 +376,28 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
       return { success: true, eventId: result.eventId, htmlLink: result.htmlLink };
     } catch (err) {
       return { success: false, error: `Failed to create calendar event: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  },
+
+  async createTask(args) {
+    try {
+      const result = await createGTask({
+        title: args.title as string,
+        notes: args.notes as string | undefined,
+        due: args.due as string | undefined,
+      });
+      return { success: true, taskId: result.taskId, title: result.title };
+    } catch (err) {
+      return { success: false, error: `Failed to create task: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  },
+
+  async listTasks(args) {
+    try {
+      const items = await listGTasks({ showCompleted: args.showCompleted as boolean | undefined });
+      return { count: items.length, items };
+    } catch (err) {
+      return { success: false, error: `Failed to list tasks: ${err instanceof Error ? err.message : String(err)}` };
     }
   },
 

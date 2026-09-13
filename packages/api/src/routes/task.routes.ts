@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { getCronJob, getCronJobs, createCronJob, getTaskRuns, getTaskRun } from '@parent-ai/shared';
 import { runGenericAgent } from '../agents/generic.agent.js';
+import { transcribeAudio } from '../services/stt.service.js';
 
 const task = new Hono();
 
@@ -16,16 +17,34 @@ function getOrCreateChatTaskId(): number {
 let chatTaskId: number | null = null;
 
 task.post('/agent/run', async (c) => {
-  const body = await c.req.json<{ prompt?: string }>();
-  if (!body.prompt) return c.json({ error: 'prompt is required' }, 400);
+  const body = await c.req.json<{
+    prompt?: string;
+    image?: { data: string; mediaType: string };
+    audio?: { data: string; mediaType: string };
+  }>();
+  if (!body.prompt && !body.image && !body.audio) {
+    return c.json({ error: 'prompt, image, or audio is required' }, 400);
+  }
 
   if (!chatTaskId) chatTaskId = getOrCreateChatTaskId();
 
-  console.log(`[api] Ad-hoc agent run: "${body.prompt.substring(0, 80)}"`);
+  let prompt = body.prompt;
+  if (body.audio) {
+    console.log('[api] Transcribing voice message...');
+    const transcript = await transcribeAudio(body.audio.data);
+    console.log(`[api] Transcript: "${transcript.substring(0, 80)}"`);
+    prompt = prompt ? `${prompt}\n\n${transcript}` : transcript;
+  }
+  if (!prompt) {
+    prompt = 'Describe what this image shows. If it depicts a scheduled event (e.g. a flyer, schedule, or invitation), create a calendar event for it.';
+  }
+
+  console.log(`[api] Ad-hoc agent run${body.image ? ' (with image)' : ''}: "${prompt.substring(0, 80)}"`);
   const result = await runGenericAgent({
     taskId: chatTaskId,
-    prompt: body.prompt,
+    prompt,
     model: 'haiku',
+    image: body.image,
   });
 
   console.log(`[api] Ad-hoc agent done: success=${result.success}, steps=${result.steps.length}`);

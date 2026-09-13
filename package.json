@@ -20,6 +20,7 @@
     "dev:cron": "npm run dev -w packages/cron",
     "dev:dashboard": "npm run dev -w packages/dashboard",
     "dev:tts": "cd packages/tts && source venv/bin/activate && python app.py",
+    "dev:stt": "cd packages/stt && source venv/bin/activate && python app.py",
     "build": "npm run build --workspaces",
     "cli": "tsx src/cli.ts"
   },

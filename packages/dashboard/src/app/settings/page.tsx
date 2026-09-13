@@ -9,6 +9,7 @@ interface CalendarStatus {
   configured: boolean;
   connected: boolean;
   calendarId: string | null;
+  taskListId: string | null;
   expiresAt: number | null;
 }
 
@@ -18,22 +19,24 @@ interface IntegrationConfig {
     client_secret?: string;
     redirect_uri?: string;
     calendar_id?: string;
+    task_list_id?: string;
+    api_key?: string;
   };
 }
 
 async function getCalendarStatus(): Promise<CalendarStatus> {
   try {
     const res = await fetch(`${API_URL}/calendar/status`, { cache: 'no-store' });
-    if (!res.ok) return { configured: false, connected: false, calendarId: null, expiresAt: null };
+    if (!res.ok) return { configured: false, connected: false, calendarId: null, taskListId: null, expiresAt: null };
     return res.json();
   } catch {
-    return { configured: false, connected: false, calendarId: null, expiresAt: null };
+    return { configured: false, connected: false, calendarId: null, taskListId: null, expiresAt: null };
   }
 }
 
-async function getIntegrationConfig(): Promise<IntegrationConfig> {
+async function getIntegrationConfig(type: string): Promise<IntegrationConfig> {
   try {
-    const res = await fetch(`${API_URL}/integrations/google_calendar`, { cache: 'no-store' });
+    const res = await fetch(`${API_URL}/integrations/${type}`, { cache: 'no-store' });
     if (!res.ok) return {};
     return res.json();
   } catch {
@@ -42,7 +45,11 @@ async function getIntegrationConfig(): Promise<IntegrationConfig> {
 }
 
 export default async function SettingsPage() {
-  const [status, integration] = await Promise.all([getCalendarStatus(), getIntegrationConfig()]);
+  const [status, integration, geminiIntegration] = await Promise.all([
+    getCalendarStatus(),
+    getIntegrationConfig('google_calendar'),
+    getIntegrationConfig('gemini'),
+  ]);
 
   return (
     <div>
@@ -50,6 +57,7 @@ export default async function SettingsPage() {
       <SettingsClient
         initialStatus={status}
         initialConfig={integration.config || {}}
+        initialGeminiConfig={geminiIntegration.config || {}}
       />
     </div>
   );

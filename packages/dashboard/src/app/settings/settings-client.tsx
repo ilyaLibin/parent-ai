@@ -7,6 +7,7 @@ interface CalendarStatus {
   configured: boolean;
   connected: boolean;
   calendarId: string | null;
+  taskListId: string | null;
   expiresAt: number | null;
 }
 
@@ -16,6 +17,11 @@ interface CalendarEntry {
   primary: boolean;
 }
 
+interface TaskListEntry {
+  id: string;
+  title: string;
+}
+
 interface Props {
   initialStatus: CalendarStatus;
   initialConfig: {
@@ -23,10 +29,14 @@ interface Props {
     client_secret?: string;
     redirect_uri?: string;
     calendar_id?: string;
+    task_list_id?: string;
+  };
+  initialGeminiConfig: {
+    api_key?: string;
   };
 }
 
-export function SettingsClient({ initialStatus, initialConfig }: Props) {
+export function SettingsClient({ initialStatus, initialConfig, initialGeminiConfig }: Props) {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState(initialStatus);
 
@@ -42,15 +52,27 @@ export function SettingsClient({ initialStatus, initialConfig }: Props) {
   const [selectedCalendar, setSelectedCalendar] = useState(initialConfig.calendar_id || '');
   const [loadingCalendars, setLoadingCalendars] = useState(false);
 
+  // Task list selector
+  const [taskLists, setTaskLists] = useState<TaskListEntry[]>([]);
+  const [selectedTaskList, setSelectedTaskList] = useState(initialConfig.task_list_id || '');
+  const [loadingTaskLists, setLoadingTaskLists] = useState(false);
+
+  // Gemini config
+  const [geminiKey, setGeminiKey] = useState('');
+  const [geminiConfigured, setGeminiConfigured] = useState(!!initialGeminiConfig.api_key);
+  const [savingGemini, setSavingGemini] = useState(false);
+  const [geminiSaved, setGeminiSaved] = useState(false);
+
   // Toast for callback redirect
   const [toast, setToast] = useState('');
 
   useEffect(() => {
     if (searchParams.get('connected') === 'true') {
-      setToast('Google Calendar connected successfully');
+      setToast('Google connected successfully');
       setStatus((s) => ({ ...s, connected: true }));
-      // Load calendars after connection
+      // Load calendars and task lists after connection
       loadCalendars();
+      loadTaskLists();
     }
     if (searchParams.get('error')) {
       setToast(`Error: ${searchParams.get('error')}`);
@@ -115,9 +137,11 @@ export function SettingsClient({ initialStatus, initialConfig }: Props) {
 
   async function handleDisconnect() {
     await fetch('/api/calendar/disconnect', { method: 'DELETE' });
-    setStatus((s) => ({ ...s, connected: false, calendarId: null }));
+    setStatus((s) => ({ ...s, connected: false, calendarId: null, taskListId: null }));
     setCalendars([]);
     setSelectedCalendar('');
+    setTaskLists([]);
+    setSelectedTaskList('');
   }
 
   async function loadCalendars() {
@@ -143,6 +167,51 @@ export function SettingsClient({ initialStatus, initialConfig }: Props) {
     setStatus((s) => ({ ...s, calendarId }));
   }
 
+  async function loadTaskLists() {
+    setLoadingTaskLists(true);
+    try {
+      const res = await fetch('/api/tasks/tasklists');
+      if (res.ok) {
+        const data = await res.json();
+        setTaskLists(data);
+      }
+    } finally {
+      setLoadingTaskLists(false);
+    }
+  }
+
+  async function handleSelectTaskList(taskListId: string) {
+    setSelectedTaskList(taskListId);
+    await fetch('/api/tasks/select-tasklist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskListId }),
+    });
+    setStatus((s) => ({ ...s, taskListId }));
+  }
+
+  async function handleSaveGemini() {
+    setSavingGemini(true);
+    try {
+      await fetch('/api/integrations/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: { api_key: geminiKey } }),
+      });
+      setGeminiConfigured(true);
+      setGeminiSaved(true);
+      setGeminiKey('');
+      setTimeout(() => setGeminiSaved(false), 2000);
+    } finally {
+      setSavingGemini(false);
+    }
+  }
+
+  async function handleDisconnectGemini() {
+    await fetch('/api/integrations/gemini', { method: 'DELETE' });
+    setGeminiConfigured(false);
+  }
+
   const [guideOpen, setGuideOpen] = useState(false);
 
   return (
@@ -154,9 +223,12 @@ export function SettingsClient({ initialStatus, initialConfig }: Props) {
         </div>
       )}
 
-      {/* Google Calendar */}
+      {/* Google Calendar + Tasks */}
       <section>
-        <h3 className="text-lg font-semibold mb-4">Google Calendar</h3>
+        <h3 className="text-lg font-semibold mb-4">Google Calendar &amp; Tasks</h3>
+        <p className="text-sm text-fg-muted mb-4">
+          One Google login powers both the family calendar and the family to-do list.
+        </p>
 
         {/* Status badge */}
         <div className="flex items-center gap-2 mb-4">
@@ -194,6 +266,10 @@ export function SettingsClient({ initialStatus, initialConfig }: Props) {
                   Enable the{' '}
                   <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
                     Google Calendar API
+                  </a>{' '}
+                  and the{' '}
+                  <a href="https://console.cloud.google.com/apis/library/tasks.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                    Google Tasks API
                   </a>
                 </li>
                 <li>
@@ -269,7 +345,7 @@ export function SettingsClient({ initialStatus, initialConfig }: Props) {
                 onClick={handleConnect}
                 className="btn-accent rounded-lg px-4 py-2 text-sm font-medium"
               >
-                Connect Google Calendar
+                Connect Google
               </button>
             ) : (
               <button
@@ -313,6 +389,89 @@ export function SettingsClient({ initialStatus, initialConfig }: Props) {
             )}
           </div>
         )}
+
+        {/* Task list selector */}
+        {status.connected && (
+          <div className="mt-4 p-4 rounded-lg border border-border bg-surface-secondary">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs text-fg-muted uppercase tracking-wider">Task list</label>
+              <button
+                onClick={loadTaskLists}
+                disabled={loadingTaskLists}
+                className="text-xs text-accent hover:text-accent/80 transition-colors"
+              >
+                {loadingTaskLists ? 'Loading...' : 'Refresh list'}
+              </button>
+            </div>
+            {taskLists.length > 0 ? (
+              <select
+                value={selectedTaskList}
+                onChange={(e) => handleSelectTaskList(e.target.value)}
+                className="w-full input-inset rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Select a task list... (defaults to your Google Tasks default list)</option>
+                {taskLists.map((tl) => (
+                  <option key={tl.id} value={tl.id}>
+                    {tl.title}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-sm text-fg-muted">Click &quot;Refresh list&quot; to load task lists</p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* Gemini */}
+      <section>
+        <h3 className="text-lg font-semibold mb-4">Gemini</h3>
+        <p className="text-sm text-fg-muted mb-4">
+          Powers the assistant behind Telegram chat, photos, voice messages, and scheduled tasks.
+        </p>
+
+        <div className="flex items-center gap-2 mb-4">
+          <span className={`inline-block w-2 h-2 rounded-full ${geminiConfigured ? 'bg-green-400' : 'bg-fg-muted/30'}`} />
+          <span className="text-sm text-fg-secondary">
+            {geminiConfigured ? 'Connected' : 'Not connected'}
+          </span>
+        </div>
+
+        <div className="space-y-3 p-4 rounded-lg border border-border bg-surface-secondary">
+          <div>
+            <label className="block text-xs text-fg-muted mb-1 uppercase tracking-wider">API Key</label>
+            <input
+              type="password"
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              className="w-full input-inset rounded-lg px-3 py-2 text-sm"
+              placeholder={geminiConfigured ? '••••••' : 'AIza...'}
+            />
+            <p className="text-xs text-fg-muted mt-1">
+              Get a key from{' '}
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+                Google AI Studio
+              </a>
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSaveGemini}
+              disabled={savingGemini || !geminiKey.trim()}
+              className="btn-accent rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {savingGemini ? '...' : geminiSaved ? 'Saved' : 'Save key'}
+            </button>
+            {geminiConfigured && (
+              <button
+                onClick={handleDisconnectGemini}
+                className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-error rounded-lg text-sm border border-red-500/20 transition-colors"
+              >
+                Disconnect
+              </button>
+            )}
+          </div>
+        </div>
       </section>
     </div>
   );

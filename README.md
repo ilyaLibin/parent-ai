@@ -33,7 +33,7 @@ Parent AI connects to WhatsApp, listens to group messages in real-time, stores t
                     └──────────┘     └───────────┘
 ```
 
-Monorepo with npm workspaces: `packages/{shared, listener, api, telegram, cron, dashboard, tts}`
+Monorepo with npm workspaces: `packages/{shared, listener, api, telegram, cron, dashboard, tts, stt}`
 
 ## Quick Start
 

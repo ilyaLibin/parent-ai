@@ -64,8 +64,12 @@ export async function triggerDailySummary(): Promise<SummaryResult> {
   return request('/summary/daily', { method: 'POST' });
 }
 
-export async function runAgent(prompt: string): Promise<AgentResult> {
-  return request('/agent/run', { method: 'POST', body: { prompt } });
+export async function runAgent(
+  prompt?: string,
+  image?: { data: string; mediaType: string },
+  audio?: { data: string; mediaType: string }
+): Promise<AgentResult> {
+  return request('/agent/run', { method: 'POST', body: { prompt, image, audio } });
 }
 
 export async function executeTaskByName(name: string): Promise<AgentResult> {

@@ -100,6 +100,9 @@ packages/
 ├── tts/                 # Kokoro TTS service (Python/Flask)
 │   └── app.py           # POST /tts → WAV audio generation
 │
+├── stt/                 # faster-whisper STT service (Python/Flask)
+│   └── app.py           # POST /transcribe → text (auto-detects Hebrew/English)
+│
 └── dashboard/           # Next.js admin dashboard
     └── src/app/
         ├── layout.tsx, sidebar.tsx   # Shell with sidebar navigation
@@ -136,7 +139,7 @@ A single generic agent executes any task defined with a prompt in the dashboard 
 
 **Tool registry** (`tool-registry.ts`): `getMessages`, `transcribeImage`, `sendTelegram`, `sendTelegramAudio`, `listKnowledge`, `getKnowledge`, `getActionItems`, `createActionItem`, `createCalendarEvent`
 
-**Ad-hoc agent** (`POST /agent/run`): Takes `{ prompt }`, runs the generic agent with Haiku model. Used by the Telegram bot for free-text chat — every message goes through the full agent with all tools.
+**Ad-hoc agent** (`POST /agent/run`): Takes `{ prompt?, image?, audio? }`, runs the generic agent with Haiku model. Used by the Telegram bot for free-text chat, photos, and voice messages — every message goes through the full agent with all tools. `image` (base64 + mediaType) is passed to Claude as a vision content block alongside the prompt/caption. `audio` (base64 + mediaType) is transcribed first via the STT service and the transcript becomes (or is appended to) the prompt.
 
 ### DB-driven task system
 Tasks (cron_jobs) are managed via the dashboard or API. Each task has:
@@ -203,6 +206,9 @@ Markdown documents stored in the `knowledge` DB table. Seeded from `packages/sha
 | API_URL | No | API base URL for telegram/cron/dashboard (default: http://localhost:3033) |
 | TTS_URL | No | TTS service URL (default: http://localhost:5050) |
 | TTS_API_TOKEN | No | TTS service auth token |
+| STT_URL | No | STT service URL (default: http://localhost:8060) |
+| STT_API_TOKEN | No | STT service auth token |
+| STT_MODEL_SIZE | No | faster-whisper model size, e.g. tiny/base/small/medium (default: small) |
 | LOCATION_LAT | No | Latitude for weather data (default: 32.79) |
 | LOCATION_LON | No | Longitude for weather data (default: 34.99) |
 
@@ -215,6 +221,8 @@ npm run dev:api          # Hono API server (with --watch auto-reload)
 npm run dev:telegram     # Telegram bot
 npm run dev:cron         # Cron job runner
 npm run dev:dashboard    # Next.js dashboard (Turbopack HMR)
+npm run dev:tts          # Kokoro TTS service
+npm run dev:stt          # faster-whisper STT service
 
 # CLI
 npm run cli -- groups    # List tracked groups
@@ -243,6 +251,8 @@ MAC_MINI_HOST=user@your-server ./deploy.sh api
 - **better-sqlite3** — Local database (WAL mode)
 - **Next.js** — Admin dashboard (App Router, Turbopack)
 - **Kokoro** — Local TTS engine (Python)
+- **faster-whisper** — Local STT engine (Python, CTranslate2/Whisper), auto-detects Hebrew/English
+- **googleapis** — Google Calendar + Google Tasks (shared OAuth client/token, configured in Settings)
 - **cronstrue** + **cron-parser** — Human-readable cron descriptions + scheduling
 
 ## Important Notes
@@ -255,4 +265,4 @@ MAC_MINI_HOST=user@your-server ./deploy.sh api
 - In Docker, volumes are shared between listener and api containers
 - Knowledge is seeded from `packages/shared/knowledge/*.md` on every API startup (INSERT OR IGNORE)
 - DB migrations run automatically on startup (column detection via pragma table_info)
-- The Telegram bot's free-text chat goes through the full generic agent — same tools as scheduled tasks
+- The Telegram bot's free-text chat (text, photos, and voice messages) goes through the full generic agent — same tools as scheduled tasks

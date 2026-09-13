@@ -5,20 +5,29 @@ import {
   saveIntegrationToken,
 } from '@parent-ai/shared';
 
-const SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.readonly'];
+const SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/tasks',
+];
 
-interface GoogleCalendarConfig {
+interface GoogleIntegrationConfig {
   client_id: string;
   client_secret: string;
   redirect_uri: string;
   calendar_id?: string;
+  task_list_id?: string;
 }
 
-function getConfig(): GoogleCalendarConfig {
+// Shared across Calendar and Tasks — both use the same OAuth client/token,
+// stored under the 'google_calendar' integration row.
+export function getGoogleConfig(): GoogleIntegrationConfig {
   const integration = getIntegration('google_calendar');
-  if (!integration) throw new Error('Google Calendar integration not configured');
+  if (!integration) throw new Error('Google integration not configured');
   return JSON.parse(integration.config_json);
 }
+
+const getConfig = getGoogleConfig;
 
 export function getOAuth2Client() {
   const config = getConfig();
@@ -47,10 +56,11 @@ export async function exchangeCodeForTokens(code: string) {
   return tokens;
 }
 
-export function getCalendarClient() {
+// Shared across Calendar and Tasks — same OAuth client/token.
+export function getAuthorizedGoogleClient() {
   const client = getOAuth2Client();
   const token = getIntegrationToken('google_calendar');
-  if (!token) throw new Error('Google Calendar not connected — no tokens found');
+  if (!token) throw new Error('Google account not connected — no tokens found');
 
   client.setCredentials({
     access_token: token.access_token,
@@ -70,7 +80,11 @@ export function getCalendarClient() {
     });
   });
 
-  return google.calendar({ version: 'v3', auth: client });
+  return client;
+}
+
+export function getCalendarClient() {
+  return google.calendar({ version: 'v3', auth: getAuthorizedGoogleClient() });
 }
 
 export async function listCalendars() {

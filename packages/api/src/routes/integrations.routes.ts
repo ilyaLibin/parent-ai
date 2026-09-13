@@ -3,6 +3,8 @@ import { getIntegration, saveIntegration, deleteIntegration } from '@parent-ai/s
 
 const integrations = new Hono();
 
+const SECRET_FIELDS = ['client_secret', 'api_key'];
+
 integrations.get('/integrations/:type', (c) => {
   const type = c.req.param('type');
   const integration = getIntegration(type);
@@ -10,8 +12,10 @@ integrations.get('/integrations/:type', (c) => {
 
   // Redact secrets in config
   const config = JSON.parse(integration.config_json);
-  if (config.client_secret) {
-    config.client_secret = config.client_secret.slice(0, 6) + '***';
+  for (const field of SECRET_FIELDS) {
+    if (config[field]) {
+      config[field] = config[field].slice(0, 6) + '***';
+    }
   }
 
   return c.json({ ...integration, config_json: JSON.stringify(config), config });
