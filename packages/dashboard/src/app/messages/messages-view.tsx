@@ -110,6 +110,8 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
   const [daySortAsc, setDaySortAsc] = useState(false);
   const [filteredDailyCounts, setFilteredDailyCounts] = useState<DailyCount[]>(initialDailyCounts);
   const [groupList, setGroupList] = useState<Group[]>(groups);
+  const [groupSearch, setGroupSearch] = useState('');
+  const [showHidden, setShowHidden] = useState(false);
 
   async function toggleTracking(e: React.MouseEvent, group: Group) {
     e.stopPropagation();
@@ -128,6 +130,25 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
       }
     } catch {
       setGroupList((prev) => prev.map((g) => g.id === group.id ? { ...g, tracked: !newTracked } : g));
+    }
+  }
+
+  async function toggleHidden(e: React.MouseEvent, group: Group) {
+    e.stopPropagation();
+    const newHidden = !group.hidden;
+    // Optimistic update
+    setGroupList((prev) => prev.map((g) => g.id === group.id ? { ...g, hidden: newHidden } : g));
+    try {
+      const res = await fetch('/api/groups/hidden', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: group.id, hidden: newHidden }),
+      });
+      if (!res.ok) {
+        setGroupList((prev) => prev.map((g) => g.id === group.id ? { ...g, hidden: !newHidden } : g));
+      }
+    } catch {
+      setGroupList((prev) => prev.map((g) => g.id === group.id ? { ...g, hidden: !newHidden } : g));
     }
   }
 
@@ -184,8 +205,10 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
     return grouped;
   }, [allGroupMessages, activeGroupIds, daySortAsc]);
 
-  // Sort groups: always put groups with messageCount > 0 first, sorted by messageCount desc.
-  // Once messages are loaded, use API order (sorted by latest message) for groups that have messages in range.
+  // Sort groups: tracked groups first, then within each bucket put groups with
+  // messageCount > 0 first (sorted by messageCount desc). Once messages are loaded,
+  // use API order (sorted by latest message) for groups that have messages in range.
+  // Also filters by the search box and hides hidden groups unless showHidden is on.
   const sortedGroups = useMemo(() => {
     // Build a map of API-returned order (already sorted by latest message time)
     const apiOrderMap = new Map<string, number>();
@@ -193,10 +216,20 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
       if (gm.messageCount > 0) apiOrderMap.set(gm.groupId, i);
     });
 
-    return [...groupList].sort((a, b) => {
+    const search = groupSearch.trim().toLowerCase();
+    const visible = groupList.filter((g) => {
+      if (!showHidden && g.hidden) return false;
+      if (search && !g.name.toLowerCase().includes(search)) return false;
+      return true;
+    });
+
+    return visible.sort((a, b) => {
+      // Tracked groups always first
+      if (a.tracked !== b.tracked) return a.tracked ? -1 : 1;
+
       const aHas = a.messageCount > 0;
       const bHas = b.messageCount > 0;
-      // Groups with 0 total messages always go to bottom
+      // Groups with 0 total messages always go to bottom (within their tracked bucket)
       if (aHas !== bHas) return bHas ? 1 : -1;
       if (!aHas && !bHas) return 0;
       // If we have API data, use the API order (by latest message in range)
@@ -208,7 +241,9 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
       // Fallback: by total messageCount
       return b.messageCount - a.messageCount;
     });
-  }, [groupList, allGroupMessages]);
+  }, [groupList, allGroupMessages, groupSearch, showHidden]);
+
+  const hiddenCount = useMemo(() => groupList.filter((g) => g.hidden).length, [groupList]);
 
   function handleDayClick(dateStr: string) {
     if (!selecting) {
@@ -389,15 +424,35 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
       <div className="flex gap-6 flex-1 min-h-0">
         {/* Group list with checkboxes */}
         <div className="w-64 shrink-0 flex flex-col overflow-y-auto">
-          {checkedGroupIds.size > 0 && (
-            <button
-              onClick={deselectAll}
-              className="text-xs text-accent hover:text-accent-hover mb-2 text-left px-2"
-            >
-              deselect all
-            </button>
-          )}
+          <input
+            type="text"
+            value={groupSearch}
+            onChange={(e) => setGroupSearch(e.target.value)}
+            placeholder="Search groups..."
+            className="w-full input-inset rounded-lg px-2.5 py-1.5 text-sm mb-2 font-content"
+          />
+          <div className="flex items-center justify-between mb-2 px-0.5">
+            {checkedGroupIds.size > 0 ? (
+              <button
+                onClick={deselectAll}
+                className="text-xs text-accent hover:text-accent-hover text-left"
+              >
+                deselect all
+              </button>
+            ) : <span />}
+            {hiddenCount > 0 && (
+              <button
+                onClick={() => setShowHidden(!showHidden)}
+                className="text-xs text-fg-muted hover:text-accent"
+              >
+                {showHidden ? `hide ${hiddenCount} hidden` : `show ${hiddenCount} hidden`}
+              </button>
+            )}
+          </div>
           <div className="space-y-1">
+          {sortedGroups.length === 0 && (
+            <p className="text-xs text-fg-muted px-2 py-1">No groups match.</p>
+          )}
           {sortedGroups.map((group) => {
             const isChecked = checkedGroupIds.has(group.id);
             const isPreviewing = previewGroupId === group.id;
@@ -410,7 +465,7 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
                   isActive
                     ? 'bg-accent-subtle text-accent font-medium border border-border'
                     : 'text-fg-secondary hover:text-fg hover:bg-surface-hover'
-                }`}
+                } ${group.hidden ? 'opacity-50' : ''}`}
               >
                 <input
                   type="checkbox"
@@ -424,6 +479,22 @@ export function MessagesView({ groups, dailyCounts: initialDailyCounts }: { grou
                 >
                   <div className="font-medium truncate font-content">{group.name}</div>
                   <div className="text-xs text-fg-muted">{group.messageCount} msgs</div>
+                </button>
+                <button
+                  onClick={(e) => toggleHidden(e, group)}
+                  title={group.hidden ? 'Hidden — click to show' : 'Click to hide'}
+                  className="shrink-0 p-1 rounded hover:bg-surface-hover transition-colors text-fg-muted hover:text-fg"
+                >
+                  {group.hidden ? (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                    </svg>
+                  ) : (
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
                 </button>
                 <button
                   onClick={(e) => toggleTracking(e, group)}

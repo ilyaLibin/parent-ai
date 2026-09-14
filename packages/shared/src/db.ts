@@ -206,6 +206,11 @@ if (!groupColNames.has('tracked')) {
   db.exec('UPDATE groups SET tracked = 1 WHERE id IN (SELECT DISTINCT group_id FROM messages)');
 }
 
+// Migrate: add hidden column to groups (lets the dashboard hide irrelevant groups from view)
+if (!groupColNames.has('hidden')) {
+  db.exec('ALTER TABLE groups ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0');
+}
+
 // Migrate: add sort_order column to renovation_jobs
 const renovationJobColumns = db.pragma('table_info(renovation_jobs)') as { name: string }[];
 const renovationJobColNames = new Set(renovationJobColumns.map((c) => c.name));
@@ -340,6 +345,7 @@ export interface Group {
   id: string;
   name: string;
   tracked: boolean;
+  hidden: boolean;
   updated_at: number;
 }
 
@@ -347,11 +353,12 @@ interface GroupRow {
   id: string;
   name: string;
   tracked: number;
+  hidden: number;
   updated_at: number;
 }
 
 function rowToGroup(row: GroupRow): Group {
-  return { ...row, tracked: row.tracked === 1 };
+  return { ...row, tracked: row.tracked === 1, hidden: row.hidden === 1 };
 }
 
 export interface Message {
@@ -435,6 +442,12 @@ export function isGroupTracked(groupId: string): boolean {
 
 export function setGroupTracked(groupId: string, tracked: boolean): Group | undefined {
   const result = db.prepare('UPDATE groups SET tracked = ? WHERE id = ?').run(tracked ? 1 : 0, groupId);
+  if (result.changes === 0) return undefined;
+  return getGroupById(groupId);
+}
+
+export function setGroupHidden(groupId: string, hidden: boolean): Group | undefined {
+  const result = db.prepare('UPDATE groups SET hidden = ? WHERE id = ?').run(hidden ? 1 : 0, groupId);
   if (result.changes === 0) return undefined;
   return getGroupById(groupId);
 }

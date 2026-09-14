@@ -9,6 +9,7 @@ export interface Group {
   id: string;
   name: string;
   tracked: boolean;
+  hidden: boolean;
   updated_at: number;
   messageCount: number;
 }

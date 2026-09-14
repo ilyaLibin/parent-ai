@@ -7,6 +7,7 @@ import {
   getDailyMessageCounts,
   resolveGroup,
   setGroupTracked,
+  setGroupHidden,
 } from '@parent-ai/shared';
 
 const whatsapp = new Hono();
@@ -25,6 +26,18 @@ whatsapp.put('/groups/tracked', async (c) => {
     return c.json({ success: false, error: 'Missing groupId or tracked (boolean)' }, 400);
   }
   const group = setGroupTracked(body.groupId, body.tracked);
+  if (!group) {
+    return c.json({ success: false, error: 'Group not found' }, 404);
+  }
+  return c.json({ success: true, group });
+});
+
+whatsapp.put('/groups/hidden', async (c) => {
+  const body = await c.req.json<{ groupId: string; hidden: boolean }>();
+  if (!body.groupId || typeof body.hidden !== 'boolean') {
+    return c.json({ success: false, error: 'Missing groupId or hidden (boolean)' }, 400);
+  }
+  const group = setGroupHidden(body.groupId, body.hidden);
   if (!group) {
     return c.json({ success: false, error: 'Group not found' }, 404);
   }
