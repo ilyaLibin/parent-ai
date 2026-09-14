@@ -25,13 +25,44 @@ let sock: WASocket | null = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+// markOnlineOnConnect:false only skips the initial "online" broadcast — WhatsApp can
+// still suppress phone notifications for an active linked session over time. Periodically
+// re-asserting 'unavailable' presence keeps phone notifications flowing.
+const PRESENCE_PING_INTERVAL_MS = 30_000;
+let presenceInterval: ReturnType<typeof setInterval> | null = null;
+
+function stopPresenceUpdates() {
+  if (presenceInterval) {
+    clearInterval(presenceInterval);
+    presenceInterval = null;
+  }
+}
+
+function startPresenceUpdates(socket: WASocket) {
+  stopPresenceUpdates();
+  const ping = () => socket.sendPresenceUpdate('unavailable').catch(() => {});
+  ping();
+  presenceInterval = setInterval(ping, PRESENCE_PING_INTERVAL_MS);
+}
+
+// Baileys' own FAQ warns against calling fetchLatestBaileysVersion() on every connect —
+// newer versions can be incompatible, and reconnects (including automatic retries) would
+// otherwise refetch it every time. Fetch once per process lifetime and reuse it.
+let cachedVersion: Awaited<ReturnType<typeof fetchLatestBaileysVersion>> | null = null;
+
+async function getWaVersion() {
+  if (!cachedVersion) {
+    cachedVersion = await fetchLatestBaileysVersion();
+  }
+  return cachedVersion;
+}
+
 export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise<WASocket> {
   mkdirSync(AUTH_DIR, { recursive: true });
 
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
-  // Fetch latest WA Web version
-  const { version, isLatest } = await fetchLatestBaileysVersion();
+  const { version, isLatest } = await getWaVersion();
   console.log(`📱 Using WA Web version: ${version.join('.')}${isLatest ? ' (latest)' : ''}`);
 
   sock = makeWASocket({
@@ -57,6 +88,8 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
     }
 
     if (connection === 'close') {
+      stopPresenceUpdates();
+
       const reason = (lastDisconnect?.error as Boom)?.output?.statusCode;
       const reasonText = DisconnectReason[reason] || `Unknown (${reason})`;
 
@@ -66,8 +99,18 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
 
       // Handle different disconnect reasons
       if (reason === DisconnectReason.loggedOut) {
-        console.log('🚫 Logged out. Please delete auth_state folder and restart to re-authenticate.');
-        process.exit(1);
+        // Unrecoverable without a human re-scanning the QR code. Do NOT exit here —
+        // with `restart: unless-stopped`, Docker would immediately relaunch the
+        // container and hit this same dead-credentials loop every few seconds,
+        // indefinitely. Idle instead: the container stays up, but stops hammering
+        // WhatsApp until someone deletes auth_state and restarts it manually.
+        console.log('🚫 Logged out. Delete the auth_state folder and restart this service to re-authenticate. Not retrying automatically — a dead session would otherwise keep reconnecting to WhatsApp forever.');
+        // Nothing else keeps the event loop alive once the socket closes, so Node would
+        // exit naturally here and Docker would restart us right back into this branch —
+        // the exact loop we're trying to avoid. An inert interval keeps the process (and
+        // container) idling indefinitely without doing anything.
+        setInterval(() => {}, 1000 * 60 * 60);
+        return;
       }
 
       // Reconnect with exponential backoff
@@ -86,6 +129,7 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
       reconnectAttempts = 0;
       logConnectionEvent('connected');
       console.log('✅ Connected to WhatsApp');
+      startPresenceUpdates(sock!);
       callbacks.onConnected?.(sock!);
     }
   });
