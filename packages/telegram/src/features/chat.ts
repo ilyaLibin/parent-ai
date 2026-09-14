@@ -1,5 +1,6 @@
 import { Composer, type Context } from 'grammy';
 import * as api from '../api-client.js';
+import { replyFormatted } from '../reply.js';
 
 export const chatFeature = new Composer();
 
@@ -48,7 +49,7 @@ async function runAndReply(
     const result = await api.runAgent(withQuotedContext(ctx, prompt), image, audio, chatId);
     const reply = result.resultText || (result.success ? 'Done!' : `Error: ${result.error}`);
     console.log(`[bot] Agent reply: "${reply.substring(0, 80)}"`);
-    await ctx.reply(reply);
+    await replyFormatted(ctx, reply);
   } catch (err) {
     console.error('[bot] Chat error:', err);
     await ctx.reply(`Sorry, something went wrong: ${err instanceof Error ? err.message : String(err)}`);

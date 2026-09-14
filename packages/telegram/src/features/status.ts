@@ -1,5 +1,6 @@
 import { Composer } from 'grammy';
 import * as api from '../api-client.js';
+import { replyFormatted } from '../reply.js';
 
 export const statusFeature = new Composer();
 
@@ -23,7 +24,7 @@ statusFeature.command('status', async (ctx) => {
       text += `\nNo connection gaps in last 24h`;
     }
 
-    await ctx.reply(text);
+    await replyFormatted(ctx, text);
   } catch (err) {
     console.error('[bot] /status error:', err);
     await ctx.reply(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -44,7 +45,7 @@ statusFeature.command('groups', async (ctx) => {
     for (const g of data.groups) {
       text += `${g.name}\n  Messages: ${g.messageCount}\n\n`;
     }
-    await ctx.reply(text);
+    await replyFormatted(ctx, text);
   } catch (err) {
     console.error('[bot] /groups error:', err);
     await ctx.reply(`Error: ${err instanceof Error ? err.message : String(err)}`);
