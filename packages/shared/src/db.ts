@@ -47,6 +47,20 @@ db.exec(`
     details TEXT
   );
 
+  -- Short-lived rolling window of Telegram chat turns, used to give the agent
+  -- context for quick follow-ups ("yes", "one event"). Not a full chat log —
+  -- old rows are pruned on write, see saveChatTurn().
+  CREATE TABLE IF NOT EXISTS chat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_chat_history_chat_time
+    ON chat_history(chat_id, created_at);
+
   CREATE TABLE IF NOT EXISTS scheduled_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     recipient_id TEXT NOT NULL,
@@ -411,6 +425,29 @@ export function saveMessage(msg: Message & { raw_json?: string }): boolean {
 
 export function logConnectionEvent(event: string, details?: string): void {
   logConnection.run(event, Date.now(), details || null);
+}
+
+export interface ChatTurn {
+  role: 'user' | 'model';
+  content: string;
+  created_at: number;
+}
+
+const CHAT_HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000; // pruned regardless of window used to read it
+
+export function saveChatTurn(chatId: string, role: 'user' | 'model', content: string): void {
+  const now = Date.now();
+  db.prepare('INSERT INTO chat_history (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)')
+    .run(chatId, role, content, now);
+  // Cheap opportunistic prune — this table is working memory, not a log.
+  db.prepare('DELETE FROM chat_history WHERE created_at < ?').run(now - CHAT_HISTORY_RETENTION_MS);
+}
+
+export function getRecentChatTurns(chatId: string, sinceMs: number, limit: number): ChatTurn[] {
+  const rows = db.prepare(
+    'SELECT role, content, created_at FROM chat_history WHERE chat_id = ? AND created_at >= ? ORDER BY created_at DESC LIMIT ?'
+  ).all(chatId, sinceMs, limit) as ChatTurn[];
+  return rows.reverse(); // chronological order for feeding back into the model
 }
 
 export function getGroups(): Group[] {

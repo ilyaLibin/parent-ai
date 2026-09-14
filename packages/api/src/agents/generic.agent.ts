@@ -1,10 +1,16 @@
 import type { Content, Part } from '@google/genai';
 import { getGeminiClient, GEMINI_MODEL } from '../services/gemini.service.js';
 import { toolDefinitions, executeTool } from './tool-registry.js';
-import { createTaskRun, completeTaskRun, updateTaskRunSteps } from '@parent-ai/shared';
+import { createTaskRun, completeTaskRun, updateTaskRunSteps, getRecentChatTurns, saveChatTurn } from '@parent-ai/shared';
 
 const HEBREW_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 const FAMILY_TIMEZONE = 'Asia/Jerusalem';
+
+// Short-lived conversation memory for Telegram chat — enough for a quick follow-up
+// ("one event") to resolve against the bot's immediately preceding question, not a
+// persistent thread. Idle longer than this and the next message starts fresh.
+const CHAT_HISTORY_WINDOW_MS = 3 * 60 * 1000;
+const MAX_HISTORY_TURNS = 6;
 
 type StepEntry =
   | { type: 'text'; content: string }
@@ -75,12 +81,22 @@ ${getCurrentDateInfo()}`;
 type SupportedImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 type SupportedAudioMediaType = 'audio/wav' | 'audio/mp3' | 'audio/ogg' | 'audio/aac' | 'audio/flac' | 'audio/aiff';
 
+// We don't persist raw image/audio bytes anywhere, so history can only carry forward
+// a text label for that turn — the model's own reply already captures what it saw/heard.
+function saveChatExchange(chatId: string | undefined, prompt: string, hasImage: boolean, hasAudio: boolean, resultText: string | null): void {
+  if (!chatId) return;
+  const label = hasImage ? '[Photo] ' : hasAudio ? '[Voice message] ' : '';
+  saveChatTurn(chatId, 'user', `${label}${prompt}`);
+  if (resultText) saveChatTurn(chatId, 'model', resultText);
+}
+
 export async function runGenericAgent(opts: {
   taskId: number;
   prompt: string;
   model?: string | null;
   image?: { data: string; mediaType: string };
   audio?: { data: string; mediaType: string };
+  chatId?: string;
 }): Promise<AgentResult> {
   const startedAt = Date.now();
 
@@ -105,7 +121,15 @@ export async function runGenericAgent(opts: {
   }
   initialParts.push({ text: prompt });
 
-  const contents: Content[] = [{ role: 'user', parts: initialParts }];
+  const contents: Content[] = [];
+  if (opts.chatId) {
+    const since = Date.now() - CHAT_HISTORY_WINDOW_MS;
+    const history = getRecentChatTurns(opts.chatId, since, MAX_HISTORY_TURNS);
+    for (const turn of history) {
+      contents.push({ role: turn.role, parts: [{ text: turn.content }] });
+    }
+  }
+  contents.push({ role: 'user', parts: initialParts });
 
   let resultText: string | null = null;
 
@@ -163,10 +187,14 @@ export async function runGenericAgent(opts: {
       token_usage_json: JSON.stringify(tokenUsage),
     });
 
+    saveChatExchange(opts.chatId, opts.prompt, !!opts.image, !!opts.audio, resultText);
+
     return { success: true, runId, steps, resultText, tokenUsage };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`[agent] Error:`, errorMsg);
+
+    saveChatExchange(opts.chatId, opts.prompt, !!opts.image, !!opts.audio, resultText || `Error: ${errorMsg}`);
 
     completeTaskRun(runId, {
       completed_at: Date.now(),

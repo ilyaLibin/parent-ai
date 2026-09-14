@@ -20,6 +20,7 @@ task.post('/agent/run', async (c) => {
     prompt?: string;
     image?: { data: string; mediaType: string };
     audio?: { data: string; mediaType: string };
+    chatId?: string;
   }>();
   if (!body.prompt && !body.image && !body.audio) {
     return c.json({ error: 'prompt, image, or audio is required' }, 400);
@@ -41,6 +42,7 @@ task.post('/agent/run', async (c) => {
     model: 'haiku',
     image: body.image,
     audio: body.audio,
+    chatId: body.chatId,
   });
 
   console.log(`[api] Ad-hoc agent done: success=${result.success}, steps=${result.steps.length}`);

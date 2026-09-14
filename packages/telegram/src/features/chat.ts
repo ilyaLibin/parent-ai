@@ -24,6 +24,19 @@ async function downloadTelegramFile(fileId: string): Promise<{ data: string; med
   return { data: buffer.toString('base64'), mediaType };
 }
 
+// When the user taps "reply" on a specific message, thread that quoted content into
+// the prompt — an unambiguous pointer to exactly what they mean, independent of the
+// rolling conversation window (useful for referencing something further back than that).
+function withQuotedContext(ctx: Context, prompt?: string): string | undefined {
+  const replyTo = ctx.message?.reply_to_message;
+  const quoted = replyTo?.text || replyTo?.caption;
+  if (!quoted) return prompt;
+
+  const who = replyTo?.from?.is_bot ? 'you (the bot)' : 'the user';
+  const context = `[Replying to a previous message from ${who}: "${quoted}"]`;
+  return prompt ? `${context}\n${prompt}` : context;
+}
+
 async function runAndReply(
   ctx: Context,
   prompt?: string,
@@ -31,7 +44,8 @@ async function runAndReply(
   audio?: { data: string; mediaType: string }
 ) {
   try {
-    const result = await api.runAgent(prompt, image, audio);
+    const chatId = ctx.chat?.id != null ? String(ctx.chat.id) : undefined;
+    const result = await api.runAgent(withQuotedContext(ctx, prompt), image, audio, chatId);
     const reply = result.resultText || (result.success ? 'Done!' : `Error: ${result.error}`);
     console.log(`[bot] Agent reply: "${reply.substring(0, 80)}"`);
     await ctx.reply(reply);
