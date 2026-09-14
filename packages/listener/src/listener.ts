@@ -9,6 +9,30 @@ interface GroupMetadata {
 
 const groupCache = new Map<string, GroupMetadata>();
 
+// Our own group cache/DB rows are otherwise only populated lazily — when a message
+// actually arrives from a group. Groups with no recent activity keep stale names,
+// and newly-joined groups don't show up at all until their first message. Fetching
+// everything we currently participate in fixes both, and is safe to call anytime
+// (upserts name only, never touches the dashboard's tracked flag).
+export async function syncAllGroups(sock: WASocket): Promise<void> {
+  try {
+    const groups = await sock.groupFetchAllParticipating();
+    let count = 0;
+    for (const [id, metadata] of Object.entries(groups)) {
+      const participants = new Map<string, string>();
+      for (const p of metadata.participants) {
+        if (p.id) participants.set(p.id, p.id.split('@')[0]);
+      }
+      groupCache.set(id, { id, subject: metadata.subject, participants });
+      saveGroup(id, metadata.subject);
+      count++;
+    }
+    console.log(`🔄 Synced ${count} groups (names/membership refreshed)`);
+  } catch (err) {
+    console.warn('⚠️ Could not sync full group list:', err instanceof Error ? err.message : String(err));
+  }
+}
+
 export function setupMessageListener(sock: WASocket): void {
   // ev.process() batches every event fired within the same tick into one callback
   // instead of separate .on() listeners — avoids partial state and is the recommended
