@@ -69,6 +69,10 @@ export async function connectToWhatsApp(callbacks: ConnectionCallbacks): Promise
     version,
     logger,
     markOnlineOnConnect: false,
+    // Defaults to true — pulls full history for every chat, not just tracked groups.
+    // We only care about tracked group messages going forward, so skip the extra
+    // startup time/memory (per baileys.wiki/concepts/socket-config).
+    syncFullHistory: false,
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, signalLogger),

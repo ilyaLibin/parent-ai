@@ -10,43 +10,72 @@ interface GroupMetadata {
 const groupCache = new Map<string, GroupMetadata>();
 
 export function setupMessageListener(sock: WASocket): void {
-  // Real-time and synced messages
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    // type: 'notify' = real-time, 'append' = historical sync
-    const isHistorical = type === 'append';
-
-    for (const msg of messages) {
-      await processMessage(sock, msg, isHistorical);
-    }
-  });
-
-  // Capture initial history sync (when device is first linked)
-  sock.ev.on('messaging-history.set', async ({ messages, isLatest }) => {
-    console.log(`\n📜 Receiving history sync (${messages.length} messages, isLatest: ${isLatest})...`);
-    let saved = 0;
-    for (const msg of messages) {
-      const wasNew = await processMessage(sock, msg, true);
-      if (wasNew) saved++;
-    }
-    console.log(`\n✅ History sync complete: ${saved} new messages saved`);
-  });
-
-  // Also listen for group metadata updates
-  sock.ev.on('groups.update', (updates) => {
-    for (const update of updates) {
-      if (update.id && update.subject) {
-        const existing = groupCache.get(update.id);
-        groupCache.set(update.id, {
-          id: update.id,
-          subject: update.subject,
-          participants: existing?.participants || new Map(),
-        });
-        saveGroup(update.id, update.subject);
+  // ev.process() batches every event fired within the same tick into one callback
+  // instead of separate .on() listeners — avoids partial state and is the recommended
+  // pattern for bulk operations like history sync (per baileys.wiki/concepts/events).
+  sock.ev.process(async (events) => {
+    const groupUpdates = events['groups.update'];
+    if (groupUpdates) {
+      for (const update of groupUpdates) {
+        if (update.id && update.subject) {
+          const existing = groupCache.get(update.id);
+          groupCache.set(update.id, {
+            id: update.id,
+            subject: update.subject,
+            participants: existing?.participants || new Map(),
+          });
+          saveGroup(update.id, update.subject);
+        }
       }
+    }
+
+    // Membership changed (add/remove/promote/demote) — refresh the cached
+    // participant names so they don't go stale.
+    const participantsUpdate = events['group-participants.update'];
+    if (participantsUpdate) {
+      await refreshParticipants(sock, participantsUpdate.id);
+    }
+
+    // Real-time and synced messages
+    const upsert = events['messages.upsert'];
+    if (upsert) {
+      // type: 'notify' = real-time, 'append' = historical sync
+      const isHistorical = upsert.type === 'append';
+      for (const msg of upsert.messages) {
+        await processMessage(sock, msg, isHistorical);
+      }
+    }
+
+    // Initial history sync (when device is first linked)
+    const history = events['messaging-history.set'];
+    if (history) {
+      console.log(`\n📜 Receiving history sync (${history.messages.length} messages, isLatest: ${history.isLatest})...`);
+      let saved = 0;
+      for (const msg of history.messages) {
+        const wasNew = await processMessage(sock, msg, true);
+        if (wasNew) saved++;
+      }
+      console.log(`\n✅ History sync complete: ${saved} new messages saved`);
     }
   });
 
   console.log(`👂 Listening for messages (tracking controlled via DB)`);
+}
+
+async function refreshParticipants(sock: WASocket, groupId: string): Promise<void> {
+  const existing = groupCache.get(groupId);
+  if (!existing) return; // not cached yet — will be populated lazily on first message
+
+  try {
+    const metadata = await sock.groupMetadata(groupId);
+    const participants = new Map<string, string>();
+    for (const p of metadata.participants) {
+      if (p.id) participants.set(p.id, p.id.split('@')[0]);
+    }
+    groupCache.set(groupId, { ...existing, participants });
+  } catch {
+    // best-effort — ignore fetch failures
+  }
 }
 
 async function processMessage(
