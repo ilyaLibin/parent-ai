@@ -20,12 +20,10 @@
     "dev:cron": "npm run dev -w packages/cron",
     "dev:dashboard": "npm run dev -w packages/dashboard",
     "dev:tts": "cd packages/tts && source venv/bin/activate && python app.py",
-    "dev:stt": "cd packages/stt && source venv/bin/activate && python app.py",
     "build": "npm run build --workspaces",
     "cli": "tsx src/cli.ts"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.74.0",
     "@types/better-sqlite3": "^7.6.13",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "better-sqlite3": "^12.6.2",

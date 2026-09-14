@@ -22,10 +22,8 @@ services:
     env_file: .env
     environment:
       TTS_URL: http://tts:5050
-      STT_URL: http://stt:8060
     depends_on:
       - tts
-      - stt
     restart: unless-stopped
 
   telegram:
@@ -59,19 +57,6 @@ services:
       - "5050:5050"
     environment:
       - TTS_API_TOKEN=${TTS_API_TOKEN}
-    restart: unless-stopped
-
-  stt:
-    image: parent-ai-stt:latest
-    build:
-      context: .
-      dockerfile: packages/stt/Dockerfile
-      args:
-        STT_MODEL_SIZE: ${STT_MODEL_SIZE:-small}
-    ports:
-      - "8060:8060"
-    environment:
-      - STT_API_TOKEN=${STT_API_TOKEN}
     restart: unless-stopped
 
   dashboard:

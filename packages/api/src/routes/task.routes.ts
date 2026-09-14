@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { getCronJob, getCronJobs, createCronJob, getTaskRuns, getTaskRun } from '@parent-ai/shared';
 import { runGenericAgent } from '../agents/generic.agent.js';
-import { transcribeAudio } from '../services/stt.service.js';
 
 const task = new Hono();
 
@@ -29,22 +28,19 @@ task.post('/agent/run', async (c) => {
   if (!chatTaskId) chatTaskId = getOrCreateChatTaskId();
 
   let prompt = body.prompt;
-  if (body.audio) {
-    console.log('[api] Transcribing voice message...');
-    const transcript = await transcribeAudio(body.audio.data);
-    console.log(`[api] Transcript: "${transcript.substring(0, 80)}"`);
-    prompt = prompt ? `${prompt}\n\n${transcript}` : transcript;
-  }
   if (!prompt) {
-    prompt = 'Describe what this image shows. If it depicts a scheduled event (e.g. a flyer, schedule, or invitation), create a calendar event for it.';
+    prompt = body.audio
+      ? 'Listen to this voice message and do what it asks. If it asks to schedule or add something, use the appropriate tool.'
+      : 'Describe what this image shows. If it depicts a scheduled event (e.g. a flyer, schedule, or invitation), create a calendar event for it.';
   }
 
-  console.log(`[api] Ad-hoc agent run${body.image ? ' (with image)' : ''}: "${prompt.substring(0, 80)}"`);
+  console.log(`[api] Ad-hoc agent run${body.image ? ' (with image)' : ''}${body.audio ? ' (with audio)' : ''}: "${prompt.substring(0, 80)}"`);
   const result = await runGenericAgent({
     taskId: chatTaskId,
     prompt,
     model: 'haiku',
     image: body.image,
+    audio: body.audio,
   });
 
   console.log(`[api] Ad-hoc agent done: success=${result.success}, steps=${result.steps.length}`);

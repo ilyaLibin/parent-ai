@@ -6,6 +6,7 @@ const PRICE_PER_M: Record<string, { input: number; output: number }> = {
   haiku: { input: 0.80, output: 4.00 },
   sonnet: { input: 3.00, output: 15.00 },
   opus: { input: 15.00, output: 75.00 },
+  'gemini-3.7-flash': { input: 0.75, output: 3.75 },
 };
 
 function estimateCost(model: string | null, tokens: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number } | null): string | null {

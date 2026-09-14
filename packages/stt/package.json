@@ -1,9 +1,0 @@
-{
-  "name": "@parent-ai/stt",
-  "version": "1.0.0",
-  "private": true,
-  "description": "faster-whisper STT Flask service (Python)",
-  "scripts": {
-    "dev": "python app.py"
-  }
-}

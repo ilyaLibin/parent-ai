@@ -2,7 +2,7 @@
 
 ## What This Project Does
 
-Connects to WhatsApp via Baileys (WhatsApp Web protocol), listens to group messages in real-time, stores them in a local SQLite database, and uses Claude AI to generate summaries and execute scheduled agent tasks. A dashboard allows managing tasks, knowledge, and viewing run history. Notifications are sent to Telegram.
+Connects to WhatsApp via Baileys (WhatsApp Web protocol), listens to group messages in real-time, stores them in a local SQLite database, and uses Gemini AI to generate summaries and execute scheduled agent tasks. A dashboard allows managing tasks, knowledge, and viewing run history. Notifications are sent to Telegram.
 
 ## First-Time Setup Guide
 
@@ -11,7 +11,7 @@ If the user is setting up this project for the first time, guide them through th
 ### 1. Prerequisites
 - Node.js 18+ installed
 - A WhatsApp account (will be linked via QR code)
-- An Anthropic API key (from console.anthropic.com)
+- A Gemini API key (from aistudio.google.com/apikey) — configured via the dashboard Settings page
 - A Telegram bot token (create one via @BotFather on Telegram)
 - Your Telegram chat ID (send /start to @userinfobot on Telegram)
 
@@ -25,7 +25,6 @@ npm install
 
 ### 3. Configure .env
 All required variables are in `.env.example`. The critical ones:
-- `ANTHROPIC_API_KEY` — Claude API key for AI features
 - `TRACKED_GROUP_IDS` — WhatsApp group IDs to monitor (discover them in step 4)
 - `TELEGRAM_BOT_TOKEN` — from @BotFather
 - `TELEGRAM_CHAT_ID` — your personal chat ID
@@ -79,7 +78,7 @@ packages/
 │       ├── routes/      # REST endpoints
 │       ├── services/    # Business logic (summarization, Telegram, TTS)
 │       └── agents/
-│           ├── generic.agent.ts  # Agentic loop using @anthropic-ai/sdk
+│           ├── generic.agent.ts  # Agentic loop using @google/genai (Gemini)
 │           └── tool-registry.ts  # Tool definitions + implementations
 │
 ├── telegram/            # grammY Telegram bot
@@ -99,9 +98,6 @@ packages/
 │
 ├── tts/                 # Kokoro TTS service (Python/Flask)
 │   └── app.py           # POST /tts → WAV audio generation
-│
-├── stt/                 # faster-whisper STT service (Python/Flask)
-│   └── app.py           # POST /transcribe → text (auto-detects Hebrew/English)
 │
 └── dashboard/           # Next.js admin dashboard
     └── src/app/
@@ -127,23 +123,23 @@ packages/
 - **Services** contain business logic (summarization, Telegram sending)
 - `summarize.ts` handles the LLM call, services orchestrate it
 
-### Generic AI Agent (@anthropic-ai/sdk)
-A single generic agent executes any task defined with a prompt in the dashboard — no code changes needed for new scheduled tasks.
+### Generic AI Agent (@google/genai — Gemini)
+A single generic agent executes any task defined with a prompt in the dashboard — no code changes needed for new scheduled tasks. Every run uses one fixed model (`GEMINI_MODEL` in `gemini.service.ts`, currently `gemini-3.7-flash`) — there is no per-task model tier.
 
 **Agent loop** (`generic.agent.ts`):
-1. Takes `{ taskId, prompt, model }` from a cron_job row
+1. Takes `{ taskId, prompt, image?, audio? }` from a cron_job row (or ad-hoc)
 2. Injects template variables (`{{today}}`, `{{tomorrow}}`, `{{date}}`, `{{datetime}}`)
-3. Calls `anthropic.messages.create()` with tools, max 20 iterations
-4. On `stop_reason === 'tool_use'`: executes tools, appends results, continues
+3. Calls `ai.models.generateContent()` with `functionDeclarations` tools, max 20 iterations
+4. On `response.functionCalls` present: executes tools, appends `functionResponse` parts, continues
 5. Records steps and token usage in `task_runs` table
 
-**Tool registry** (`tool-registry.ts`): `getMessages`, `transcribeImage`, `sendTelegram`, `sendTelegramAudio`, `listKnowledge`, `getKnowledge`, `getActionItems`, `createActionItem`, `createCalendarEvent`
+**Tool registry** (`tool-registry.ts`): `getMessages`, `transcribeImage`, `sendTelegram`, `sendTelegramAudio`, `listKnowledge`, `getKnowledge`, `getActionItems`, `createActionItem`, `createCalendarEvent`, `createTask`, `listTasks`
 
-**Ad-hoc agent** (`POST /agent/run`): Takes `{ prompt?, image?, audio? }`, runs the generic agent with Haiku model. Used by the Telegram bot for free-text chat, photos, and voice messages — every message goes through the full agent with all tools. `image` (base64 + mediaType) is passed to Claude as a vision content block alongside the prompt/caption. `audio` (base64 + mediaType) is transcribed first via the STT service and the transcript becomes (or is appended to) the prompt.
+**Ad-hoc agent** (`POST /agent/run`): Takes `{ prompt?, image?, audio? }`. Used by the Telegram bot for free-text chat, photos, and voice messages — every message goes through the full agent with all tools. Both `image` and `audio` (base64 + mediaType) are passed directly to Gemini as `inlineData` parts alongside the prompt/caption — Gemini transcribes/understands audio natively, no separate STT step.
 
 ### DB-driven task system
 Tasks (cron_jobs) are managed via the dashboard or API. Each task has:
-- `name`, `schedule` (cron expression), `prompt` (agent instructions), `model` (sonnet/haiku/opus), `enabled`
+- `name`, `schedule` (cron expression), `prompt` (agent instructions), `enabled`
 - Cron runner polls every 60s, fires matching tasks via `POST /task/:id/execute`
 - Legacy tasks (no prompt) fire via their `endpoint`/`method` directly
 
@@ -197,7 +193,7 @@ Markdown documents stored in the `knowledge` DB table. Seeded from `packages/sha
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| ANTHROPIC_API_KEY | Yes | Claude API key |
+| GEMINI_API_KEY | No | Gemini API key — fallback only; normally set via dashboard Settings (stored in DB) |
 | TRACKED_GROUP_IDS | No | Comma-separated WhatsApp group IDs to seed as tracked on startup (after that, manage via dashboard) |
 | TELEGRAM_BOT_TOKEN | Yes | Telegram bot token from @BotFather |
 | TELEGRAM_CHAT_ID | Yes | Your personal Telegram chat ID |
@@ -206,9 +202,6 @@ Markdown documents stored in the `knowledge` DB table. Seeded from `packages/sha
 | API_URL | No | API base URL for telegram/cron/dashboard (default: http://localhost:3033) |
 | TTS_URL | No | TTS service URL (default: http://localhost:5050) |
 | TTS_API_TOKEN | No | TTS service auth token |
-| STT_URL | No | STT service URL (default: http://localhost:8060) |
-| STT_API_TOKEN | No | STT service auth token |
-| STT_MODEL_SIZE | No | faster-whisper model size, e.g. tiny/base/small/medium (default: small) |
 | LOCATION_LAT | No | Latitude for weather data (default: 32.79) |
 | LOCATION_LON | No | Longitude for weather data (default: 34.99) |
 
@@ -222,7 +215,6 @@ npm run dev:telegram     # Telegram bot
 npm run dev:cron         # Cron job runner
 npm run dev:dashboard    # Next.js dashboard (Turbopack HMR)
 npm run dev:tts          # Kokoro TTS service
-npm run dev:stt          # faster-whisper STT service
 
 # CLI
 npm run cli -- groups    # List tracked groups
@@ -246,12 +238,11 @@ MAC_MINI_HOST=user@your-server ./deploy.sh api
 
 - **Hono** + @hono/node-server — HTTP API
 - **Baileys** — WhatsApp Web protocol
-- **@anthropic-ai/sdk** — AI agent workflows with tool calling, vision, summarization
+- **@google/genai** — Gemini AI agent workflows with function calling, vision, native audio understanding, summarization
 - **grammY** — Telegram bot framework
 - **better-sqlite3** — Local database (WAL mode)
 - **Next.js** — Admin dashboard (App Router, Turbopack)
-- **Kokoro** — Local TTS engine (Python)
-- **faster-whisper** — Local STT engine (Python, CTranslate2/Whisper), auto-detects Hebrew/English
+- **Kokoro** — Local TTS engine (Python), for sending voice replies
 - **googleapis** — Google Calendar + Google Tasks (shared OAuth client/token, configured in Settings)
 - **cronstrue** + **cron-parser** — Human-readable cron descriptions + scheduling
 

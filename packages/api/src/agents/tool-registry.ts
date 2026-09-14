@@ -1,4 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type { FunctionDeclaration } from '@google/genai';
+import { getGeminiClient, GEMINI_MODEL } from '../services/gemini.service.js';
 import {
   getMessages,
   getGroups,
@@ -7,22 +8,23 @@ import {
   downloadMedia,
   getKnowledgeList,
   getKnowledgeByName,
+  createKnowledge,
+  updateKnowledgeById,
   createActionItem,
   getActionItems,
+  createCronJob,
   type Group,
 } from '@parent-ai/shared';
 import { sendTelegram, sendTelegramAudio } from '../services/telegram.service.js';
-import { createCalendarEvent as createGCalEvent } from '../services/google-calendar.service.js';
+import { createCalendarEvent as createGCalEvent, listEvents as listGCalEvents } from '../services/google-calendar.service.js';
 import { createTask as createGTask, listTasks as listGTasks } from '../services/google-tasks.service.js';
 
-const anthropic = new Anthropic();
-
-export const toolDefinitions: Anthropic.Tool[] = [
+export const toolDefinitions: FunctionDeclaration[] = [
   {
     name: 'getMessages',
     description:
       'Fetch WhatsApp messages from tracked groups within a time range. Returns messages with sender, content, type, and timestamp. Messages with type "image" contain an image that can be transcribed using the transcribeImage tool.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         groupIds: {
@@ -42,7 +44,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
     name: 'transcribeImage',
     description:
       'Download and transcribe an image from a WhatsApp message. Use this when a message has type "image" to extract text or describe the image content (e.g., homework photos, schedules, announcements).',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         messageId: {
@@ -61,7 +63,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
     name: 'sendTelegram',
     description:
       'Send a formatted message to the user via Telegram. Use this to deliver the final report or summary. Supports Markdown formatting.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         text: {
@@ -75,13 +77,13 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: 'sendTelegramAudio',
     description:
-      'Convert text to speech and send it as an audio message to the user via Telegram. Use this when the user asks for a voice/audio message or when audio delivery is more appropriate.',
-    input_schema: {
+      'Convert text to speech and send it as an audio message to the user via Telegram. Use this when the user asks for a voice/audio message or when audio delivery is more appropriate. The TTS engine only supports English (and a few other non-Hebrew languages) — it cannot speak Hebrew. If the response would otherwise be in Hebrew or another unsupported language, translate the text to English before passing it to this tool.',
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         text: {
           type: 'string',
-          description: 'The text to convert to speech and send as audio.',
+          description: 'The text to convert to speech and send as audio. Must be in English — translate first if the natural response would be in Hebrew or another language, since the TTS engine cannot pronounce it.',
         },
         voice: {
           type: 'string',
@@ -94,7 +96,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: 'listKnowledge',
     description: 'List all available knowledge entries by name.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {},
       required: [],
@@ -103,7 +105,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: 'getKnowledge',
     description: 'Get the content of a knowledge entry by name.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         name: {
@@ -115,10 +117,29 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'saveKnowledge',
+    description:
+      'Create or update a knowledge base entry by name. If an entry with this name already exists, its content is fully replaced — use getKnowledge first if you need to merge with or preserve existing content rather than overwrite it. Use this when the user explicitly asks to update/save something to the knowledge base (e.g. a school schedule extracted from a photo).',
+    parametersJsonSchema: {
+      type: 'object' as const,
+      properties: {
+        name: {
+          type: 'string',
+          description: 'The knowledge entry name (e.g. "aviv_school_schedule"). If it already exists, its content is replaced; otherwise a new entry is created.',
+        },
+        content: {
+          type: 'string',
+          description: 'The full markdown content to save.',
+        },
+      },
+      required: ['name', 'content'],
+    },
+  },
+  {
     name: 'getActionItems',
     description:
       'Get existing action items, optionally filtered by date range. Use this before creating new action items to avoid duplicates.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         from: {
@@ -137,7 +158,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
     name: 'createActionItem',
     description:
       'Create an action item extracted from WhatsApp messages. Use this to save tasks, events, deadlines, or things parents need to do.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         description: {
@@ -169,10 +190,52 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'createScheduledTask',
+    description:
+      "Create a new recurring scheduled agent task (shown on the dashboard's Tasks page) — e.g. a daily/weekly report, reminder, or automated check that runs on its own on a cron schedule. This is DIFFERENT from createTask (Google Tasks to-do items) and createCalendarEvent (one-off calendar events) — use this only when the user wants something to run repeatedly and unattended. For safety, the task is always created DISABLED — it will not run until a human reviews and enables it in the dashboard. Always tell the user the reviewUrl from the result so they can enable it.",
+    parametersJsonSchema: {
+      type: 'object' as const,
+      properties: {
+        name: {
+          type: 'string',
+          description: 'A short unique identifier for the task, e.g. "weekly-homework-check" (lowercase, hyphenated, no spaces).',
+        },
+        schedule: {
+          type: 'string',
+          description: 'A 5-field cron expression (minute hour day-of-month month day-of-week), e.g. "0 20 * * 0" for every Sunday at 8pm.',
+        },
+        prompt: {
+          type: 'string',
+          description: 'The full instructions for the agent to follow each time this task runs. Can use template variables {{today}}, {{tomorrow}}, {{date}}, {{datetime}}.',
+        },
+      },
+      required: ['name', 'schedule', 'prompt'],
+    },
+  },
+  {
+    name: 'getCalendarEvents',
+    description:
+      'List events from the family Google Calendar within a date range. Use this to answer questions like "what do I have today", "what\'s happening this week", or "when is the next birthday". Recurring events (e.g. yearly birthdays) are automatically expanded into their individual occurrences within the range.',
+    parametersJsonSchema: {
+      type: 'object' as const,
+      properties: {
+        from: {
+          type: 'string',
+          description: 'Start date in YYYY-MM-DD format.',
+        },
+        to: {
+          type: 'string',
+          description: 'End date in YYYY-MM-DD format (inclusive). Use the same value as "from" to query a single day.',
+        },
+      },
+      required: ['from', 'to'],
+    },
+  },
+  {
     name: 'createCalendarEvent',
     description:
       'Create a Google Calendar event. Use this when the user asks to schedule something or when an action item should be added to the calendar.',
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         summary: {
@@ -207,7 +270,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
     name: 'createTask',
     description:
       "Create a to-do entry on the family's Google Tasks list. Use this for reminders and to-dos that don't have a specific date/time (unlike createCalendarEvent, which is for scheduled events).",
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         title: {
@@ -229,7 +292,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: 'listTasks',
     description: "List existing to-do entries on the family's Google Tasks list. Use this before creating a task to avoid duplicates.",
-    input_schema: {
+    parametersJsonSchema: {
       type: 'object' as const,
       properties: {
         showCompleted: {
@@ -294,25 +357,21 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
       ? `Extract all text and important information from this image. Context: ${context}. If the image contains Hebrew text, transcribe it in Hebrew.`
       : `Extract all text and important information from this image. If it contains Hebrew text, transcribe it in Hebrew. Describe any visual content that provides useful information.`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      messages: [
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: [
         {
           role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: 'image/jpeg', data: base64 },
-            },
-            { type: 'text', text: prompt },
+          parts: [
+            { inlineData: { mimeType: 'image/jpeg', data: base64 } },
+            { text: prompt },
           ],
         },
       ],
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
-    return { success: true, transcription: text };
+    return { success: true, transcription: response.text || '' };
   },
 
   async sendTelegram(args) {
@@ -356,11 +415,56 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
     return { success: true, name: entry.name, content: entry.content };
   },
 
+  async saveKnowledge(args) {
+    const name = args.name as string;
+    const content = args.content as string;
+    const existing = getKnowledgeByName(name);
+    if (existing) {
+      const updated = updateKnowledgeById(existing.id, { content });
+      return { success: true, id: updated!.id, name: updated!.name, action: 'updated' };
+    }
+    const created = createKnowledge({ name, content });
+    return { success: true, id: created.id, name: created.name, action: 'created' };
+  },
+
   async getActionItems(args) {
     const from = args.from as string | undefined;
     const to = args.to as string | undefined;
     const items = getActionItems(from, to);
     return { count: items.length, items: items.map((i) => ({ id: i.id, description: i.description, date: i.date, sourceGroupName: i.source_group_name })) };
+  },
+
+  async createScheduledTask(args) {
+    try {
+      const job = createCronJob({
+        name: args.name as string,
+        schedule: args.schedule as string,
+        prompt: args.prompt as string,
+        enabled: false,
+      });
+      const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:3000';
+      return {
+        success: true,
+        id: job.id,
+        name: job.name,
+        enabled: false,
+        reviewUrl: `${dashboardUrl}/tasks/${job.id}`,
+      };
+    } catch (err) {
+      return { success: false, error: `Failed to create scheduled task: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  },
+
+  async getCalendarEvents(args) {
+    try {
+      const events = await listGCalEvents({
+        from: args.from as string,
+        to: args.to as string,
+      });
+      return { count: events.length, events };
+    } catch (err) {
+      return { success: false, error: `Failed to fetch calendar events: ${err instanceof Error ? err.message : String(err)}` };
+    }
   },
 
   async createCalendarEvent(args) {

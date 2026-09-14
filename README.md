@@ -2,13 +2,13 @@
 
 **WhatsApp group tracker with AI summaries, a Telegram bot, and a dashboard — built for parents who want to stay on top of school group chats.**
 
-Parent AI connects to WhatsApp, listens to group messages in real-time, stores them locally, and uses Claude AI to generate summaries, extract homework assignments, and execute scheduled tasks. You control everything through a Telegram bot or a web dashboard.
+Parent AI connects to WhatsApp, listens to group messages in real-time, stores them locally, and uses Gemini AI to generate summaries, extract homework assignments, and execute scheduled tasks. You control everything through a Telegram bot or a web dashboard.
 
 ## What It Does
 
 - **Listens** to WhatsApp group messages in real-time via Baileys
 - **Stores** messages in a local SQLite database (nothing leaves your machine)
-- **Summarizes** group conversations using Claude AI
+- **Summarizes** group conversations using Gemini AI
 - **Runs scheduled tasks** — daily school reports, homework extraction, schedule reminders
 - **Sends notifications** via Telegram (text and audio messages)
 - **Dashboard** for managing tasks, knowledge base, and viewing agent run history
@@ -33,7 +33,7 @@ Parent AI connects to WhatsApp, listens to group messages in real-time, stores t
                     └──────────┘     └───────────┘
 ```
 
-Monorepo with npm workspaces: `packages/{shared, listener, api, telegram, cron, dashboard, tts, stt}`
+Monorepo with npm workspaces: `packages/{shared, listener, api, telegram, cron, dashboard, tts}`
 
 ## Quick Start
 
@@ -41,7 +41,7 @@ Monorepo with npm workspaces: `packages/{shared, listener, api, telegram, cron, 
 
 - **Node.js 18+**
 - **WhatsApp account** (will be linked via QR code)
-- **Anthropic API key** from [console.anthropic.com](https://console.anthropic.com)
+- **Gemini API key** from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — configured via the dashboard Settings page
 - **Telegram bot** — create one via [@BotFather](https://t.me/BotFather)
 - **Telegram chat ID** — send `/start` to [@userinfobot](https://t.me/userinfobot)
 
@@ -128,10 +128,10 @@ The generic agent (`packages/api/src/agents/generic.agent.ts`) is the core of th
 
 1. Takes a prompt (from a scheduled task or free-text Telegram message)
 2. Injects template variables (`{{today}}`, `{{tomorrow}}`, `{{date}}`)
-3. Runs a multi-step loop with Claude, calling tools as needed
+3. Runs a multi-step loop with Gemini, calling tools as needed
 4. Records every step for debugging in the dashboard
 
-**Available tools**: `getMessages`, `transcribeImage`, `sendTelegram`, `sendTelegramAudio`, `listKnowledge`, `getKnowledge`, `getActionItems`, `createActionItem`, `createCalendarEvent`
+**Available tools**: `getMessages`, `transcribeImage`, `sendTelegram`, `sendTelegramAudio`, `listKnowledge`, `getKnowledge`, `getActionItems`, `createActionItem`, `createCalendarEvent`, `createTask`, `listTasks`
 
 Tasks are fully configurable in the dashboard — no code changes needed. Write a prompt, set a cron schedule, and the agent handles the rest.
 
@@ -139,7 +139,7 @@ Tasks are fully configurable in the dashboard — no code changes needed. Write 
 
 - **[Hono](https://hono.dev)** — HTTP API framework
 - **[Baileys](https://github.com/WhiskeySockets/Baileys)** — WhatsApp Web protocol
-- **[@anthropic-ai/sdk](https://github.com/anthropics/anthropic-sdk-typescript)** — Claude AI with tool calling
+- **[@google/genai](https://github.com/googleapis/js-genai)** — Gemini AI with tool calling, vision, native audio
 - **[grammY](https://grammy.dev)** — Telegram bot framework
 - **[better-sqlite3](https://github.com/WiseLibs/better-sqlite3)** — Local SQLite database
 - **[Next.js](https://nextjs.org)** — Admin dashboard

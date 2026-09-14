@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import Anthropic from '@anthropic-ai/sdk';
+import type { Content, FunctionDeclaration, Part } from '@google/genai';
+import { getGeminiClient, GEMINI_MODEL } from '../services/gemini.service.js';
 import {
   getCronJobs,
   getKnowledgeByName,
@@ -8,7 +9,6 @@ import {
   getGroups,
 } from '@parent-ai/shared';
 
-const anthropic = new Anthropic();
 const ai = new Hono();
 
 type StepEntry =
@@ -16,22 +16,22 @@ type StepEntry =
   | { type: 'tool_call'; name: string; args: Record<string, unknown>; result: unknown };
 
 // Tools the assist agent can use to gather context
-const assistToolDefinitions: Anthropic.Tool[] = [
+const assistToolDefinitions: FunctionDeclaration[] = [
   {
     name: 'listTasks',
     description: 'List all existing task definitions with their names, schedules, models, and prompts.',
-    input_schema: { type: 'object' as const, properties: {}, required: [] },
+    parametersJsonSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'listKnowledge',
     description: 'List all available knowledge entries by name.',
-    input_schema: { type: 'object' as const, properties: {}, required: [] },
+    parametersJsonSchema: { type: 'object', properties: {}, required: [] },
   },
   {
     name: 'getKnowledge',
     description: 'Get the full content of a knowledge entry by name.',
-    input_schema: {
-      type: 'object' as const,
+    parametersJsonSchema: {
+      type: 'object',
       properties: {
         name: { type: 'string', description: 'The name of the knowledge entry to retrieve.' },
       },
@@ -41,7 +41,7 @@ const assistToolDefinitions: Anthropic.Tool[] = [
   {
     name: 'listGroups',
     description: 'List all WhatsApp groups with their names and IDs.',
-    input_schema: { type: 'object' as const, properties: {}, required: [] },
+    parametersJsonSchema: { type: 'object', properties: {}, required: [] },
   },
 ];
 
@@ -114,52 +114,51 @@ Rules:
 
   return streamSSE(c, async (stream) => {
     const steps: StepEntry[] = [];
-    const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userPrompt }];
+    const contents: Content[] = [{ role: 'user', parts: [{ text: userPrompt }] }];
+    const genai = getGeminiClient();
+    const config = {
+      systemInstruction: systemPrompt,
+      tools: [{ functionDeclarations: assistToolDefinitions }],
+    };
 
     try {
       for (let i = 0; i < 10; i++) {
-        const response = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5-20250929',
-          max_tokens: 4096,
-          system: systemPrompt,
-          tools: assistToolDefinitions,
-          messages,
+        const response = await genai.models.generateContent({
+          model: GEMINI_MODEL,
+          contents,
+          config,
         });
 
-        // Collect text blocks
-        for (const block of response.content) {
-          if (block.type === 'text' && block.text.trim()) {
-            steps.push({ type: 'text', content: block.text });
-            await stream.writeSSE({ data: JSON.stringify({ type: 'steps', steps }), event: 'steps' });
-          }
+        if (response.text?.trim()) {
+          steps.push({ type: 'text', content: response.text });
+          await stream.writeSSE({ data: JSON.stringify({ type: 'steps', steps }), event: 'steps' });
         }
 
-        if (response.stop_reason !== 'tool_use') {
+        const functionCalls = response.functionCalls || [];
+        if (functionCalls.length === 0) {
           break;
         }
 
+        const modelContent = response.candidates?.[0]?.content;
+        if (modelContent) contents.push(modelContent);
+
         // Execute tool calls
-        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        const responseParts: Part[] = [];
 
-        for (const block of response.content) {
-          if (block.type === 'tool_use') {
-            const args = block.input as Record<string, unknown>;
-            const impl = assistToolImplementations[block.name];
-            const result = impl ? impl(args) : { error: `Unknown tool: ${block.name}` };
+        for (const call of functionCalls) {
+          const args = (call.args || {}) as Record<string, unknown>;
+          const impl = assistToolImplementations[call.name!];
+          const result = impl ? impl(args) : { error: `Unknown tool: ${call.name}` };
 
-            steps.push({ type: 'tool_call', name: block.name, args, result });
-            await stream.writeSSE({ data: JSON.stringify({ type: 'steps', steps }), event: 'steps' });
+          steps.push({ type: 'tool_call', name: call.name!, args, result });
+          await stream.writeSSE({ data: JSON.stringify({ type: 'steps', steps }), event: 'steps' });
 
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: block.id,
-              content: JSON.stringify(result),
-            });
-          }
+          responseParts.push({
+            functionResponse: { name: call.name!, id: call.id, response: { result } },
+          });
         }
 
-        messages.push({ role: 'assistant', content: response.content as Anthropic.ContentBlockParam[] });
-        messages.push({ role: 'user', content: toolResults });
+        contents.push({ role: 'user', parts: responseParts });
       }
 
       // Extract the final text result (last text step)

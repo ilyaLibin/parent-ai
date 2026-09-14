@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import Anthropic from '@anthropic-ai/sdk';
+import { getGeminiClient, GEMINI_MODEL } from '../services/gemini.service.js';
 import {
   getCronJobs,
   getCronJob,
@@ -9,7 +9,6 @@ import {
   deleteCronJobById,
 } from '@parent-ai/shared';
 
-const anthropic = new Anthropic();
 const cron = new Hono();
 
 cron.get('/cron-jobs', (c) => {
@@ -76,15 +75,17 @@ cron.post('/cron-jobs/ai', async (c) => {
   }
 
   try {
-    const res = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 50,
-      system:
-        'You convert natural language schedule descriptions into 5-field cron expressions. Reply with ONLY the cron expression, nothing else. No explanation, no backticks, no extra text.',
-      messages: [{ role: 'user', content: input }],
+    const ai = getGeminiClient();
+    const res = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: input,
+      config: {
+        systemInstruction:
+          'You convert natural language schedule descriptions into 5-field cron expressions. Reply with ONLY the cron expression, nothing else. No explanation, no backticks, no extra text.',
+      },
     });
 
-    const expression = (res.content[0] as { type: 'text'; text: string }).text.trim();
+    const expression = (res.text || '').trim();
 
     if (!isValidCron(expression)) {
       return c.json({ error: 'Failed to generate a valid cron expression' }, 422);

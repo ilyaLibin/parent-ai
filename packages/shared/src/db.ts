@@ -312,19 +312,23 @@ Today is {{today}} ({{date}}). Look up the school schedule from knowledge and se
   db.prepare(`INSERT INTO _meta (key, value) VALUES (?, ?)`).run('seeded_v2', String(now));
 }
 
-// Seed knowledge from .md files — runs every startup, INSERT OR IGNORE won't overwrite existing entries
-const KNOWLEDGE_DIR = join(__dirname, '..', 'knowledge');
-try {
-  const knowledgeNow = Date.now();
-  const files = readdirSync(KNOWLEDGE_DIR).filter((f) => f.endsWith('.md'));
-  for (const file of files) {
-    const name = basename(file, '.md');
-    const content = readFileSync(join(KNOWLEDGE_DIR, file), 'utf-8');
-    db.prepare(`INSERT OR IGNORE INTO knowledge (name, content, created_at, updated_at) VALUES (?, ?, ?, ?)`)
-      .run(name, content, knowledgeNow, knowledgeNow);
+// Seed example knowledge from .md files — only when the knowledge base is completely
+// empty (first-time setup). Once any entry exists (including a deleted example), never reseed.
+const knowledgeCount = (db.prepare('SELECT COUNT(*) as c FROM knowledge').get() as { c: number }).c;
+if (knowledgeCount === 0) {
+  const KNOWLEDGE_DIR = join(__dirname, '..', 'knowledge');
+  try {
+    const knowledgeNow = Date.now();
+    const files = readdirSync(KNOWLEDGE_DIR).filter((f) => f.endsWith('.md'));
+    for (const file of files) {
+      const name = basename(file, '.md');
+      const content = readFileSync(join(KNOWLEDGE_DIR, file), 'utf-8');
+      db.prepare(`INSERT INTO knowledge (name, content, created_at, updated_at) VALUES (?, ?, ?, ?)`)
+        .run(name, content, knowledgeNow, knowledgeNow);
+    }
+  } catch {
+    // Knowledge dir may not exist in all environments
   }
-} catch {
-  // Knowledge dir may not exist in all environments
 }
 
 // Migrate existing agent-based jobs that only have system_prompt but no prompt (runs every time, idempotent)

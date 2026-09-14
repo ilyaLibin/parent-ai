@@ -11,6 +11,20 @@ const SCOPES = [
   'https://www.googleapis.com/auth/tasks',
 ];
 
+const FAMILY_TIMEZONE = 'Asia/Jerusalem';
+
+// Computes the UTC offset (e.g. "+03:00") in effect for FAMILY_TIMEZONE on a given
+// YYYY-MM-DD date, so we can build RFC3339 timestamps that correctly account for DST.
+function getUtcOffset(dateStr: string): string {
+  const anchor = new Date(`${dateStr}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: FAMILY_TIMEZONE,
+    timeZoneName: 'longOffset',
+  }).formatToParts(anchor);
+  const tzName = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT+00:00';
+  return tzName.replace('GMT', '') || '+00:00';
+}
+
 interface GoogleIntegrationConfig {
   client_id: string;
   client_secret: string;
@@ -126,7 +140,7 @@ export async function createCalendarEvent(params: {
     if (/^\d+$/.test(colorId)) event.colorId = colorId;
   }
 
-  const timeZone = 'Asia/Jerusalem';
+  const timeZone = FAMILY_TIMEZONE;
 
   if (params.isAllDay) {
     event.start = { date: params.startDate, timeZone };
@@ -145,4 +159,32 @@ export async function createCalendarEvent(params: {
     eventId: res.data.id,
     htmlLink: res.data.htmlLink,
   };
+}
+
+export async function listEvents(params: { from: string; to: string }) {
+  const config = getConfig();
+  const calendarId = config.calendar_id || 'primary';
+  const calendar = getCalendarClient();
+
+  const timeMin = `${params.from}T00:00:00${getUtcOffset(params.from)}`;
+  const timeMax = `${params.to}T23:59:59${getUtcOffset(params.to)}`;
+
+  const res = await calendar.events.list({
+    calendarId,
+    timeMin,
+    timeMax,
+    singleEvents: true, // expands recurring events (e.g. yearly birthdays) into occurrences
+    orderBy: 'startTime',
+    maxResults: 250,
+  });
+
+  return (res.data.items || []).map((e) => ({
+    id: e.id,
+    summary: e.summary || '(no title)',
+    description: e.description || undefined,
+    start: e.start?.dateTime || e.start?.date,
+    end: e.end?.dateTime || e.end?.date,
+    isAllDay: !!e.start?.date,
+    location: e.location || undefined,
+  }));
 }

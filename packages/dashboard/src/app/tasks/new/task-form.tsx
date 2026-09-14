@@ -23,8 +23,6 @@ interface TaskFormProps {
   };
 }
 
-const MODELS = ['haiku', 'sonnet', 'opus'] as const;
-
 export function TaskForm({ initial }: TaskFormProps) {
   const router = useRouter();
   const isEdit = !!initial?.id;
@@ -32,7 +30,6 @@ export function TaskForm({ initial }: TaskFormProps) {
   const [name, setName] = useState(initial?.name || '');
   const [schedule, setSchedule] = useState(initial?.schedule || '0 * * * *');
   const [prompt, setPrompt] = useState(initial?.prompt || '');
-  const [model, setModel] = useState(initial?.model || 'sonnet');
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -49,7 +46,6 @@ export function TaskForm({ initial }: TaskFormProps) {
       name: name.trim(),
       schedule,
       prompt: prompt.trim() || null,
-      model: prompt.trim() ? model : null,
       enabled,
       endpoint: initial?.endpoint || '',
       method: initial?.method || 'POST',
@@ -139,28 +135,6 @@ export function TaskForm({ initial }: TaskFormProps) {
 
       {/* Right panel — settings + actions */}
       <div className="w-full md:w-64 flex flex-col gap-4 shrink-0">
-        {/* Model pills */}
-        {prompt.trim() && (
-          <div>
-            <label className="block text-xs text-fg-muted mb-1.5 uppercase tracking-wider">Model</label>
-            <div className="flex rounded-lg overflow-hidden border border-border">
-              {MODELS.map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setModel(m)}
-                  className={`flex-1 py-1.5 text-xs font-medium transition-all ${
-                    model === m
-                      ? 'bg-accent text-white shadow-sm'
-                      : 'bg-raised text-fg-secondary hover:bg-surface-hover'
-                  } ${m !== 'haiku' ? 'border-l border-border' : ''}`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Enabled toggle */}
         <div className="flex items-center justify-between">
           <label className="text-xs text-fg-muted uppercase tracking-wider">Enabled</label>

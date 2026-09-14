@@ -1,7 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { getGeminiClient, GEMINI_MODEL } from './gemini.service.js';
 import { getMessagesByGroup, getConnectionGaps, Message } from '@parent-ai/shared';
-
-const anthropic = new Anthropic();
 
 export interface SummaryResult {
   groupName: string;
@@ -72,19 +70,14 @@ export async function summarizeGroup(
     ? `${options.customPrompt}\n\nHere are the messages:\n\n${messagesBlock}`
     : buildSummaryPrompt(groupName, formattedMessages, startTime, endTime);
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
+  const ai = getGeminiClient();
+  const response = await ai.models.generateContent({
+    model: GEMINI_MODEL,
+    contents: prompt,
   });
 
   // Parse the response
-  const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+  const responseText = response.text || '';
   const parsed = parseSummaryResponse(responseText);
 
   return {
