@@ -13,7 +13,10 @@ import {
 const whatsapp = new Hono();
 
 whatsapp.get('/groups', (c) => {
-  const groups = getGroups().map((g) => ({
+  const excludeHidden = c.req.query('excludeHidden') === 'true';
+  const all = getGroups();
+  const filtered = excludeHidden ? all.filter((g) => !g.hidden) : all;
+  const groups = filtered.map((g) => ({
     ...g,
     messageCount: getMessageCount(g.id),
   }));

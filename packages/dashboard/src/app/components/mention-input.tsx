@@ -47,7 +47,7 @@ async function fetchMentionItems(): Promise<MentionItem[]> {
   if (cachedItems) return cachedItems;
 
   const [groupsRes, knowledgeRes] = await Promise.all([
-    fetch('/api/groups'),
+    fetch('/api/groups?excludeHidden=true'),
     fetch('/api/knowledge'),
   ]);
 
