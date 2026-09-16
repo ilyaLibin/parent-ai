@@ -119,7 +119,7 @@ export const toolDefinitions: FunctionDeclaration[] = [
   {
     name: 'saveKnowledge',
     description:
-      'Create or update a knowledge base entry by name. If an entry with this name already exists, its content is fully replaced — use getKnowledge first if you need to merge with or preserve existing content rather than overwrite it. Use this when the user explicitly asks to update/save something to the knowledge base (e.g. a school schedule extracted from a photo).',
+      'Create or update a knowledge base entry by name. If an entry with this name already exists, its content is fully replaced — use getKnowledge first if you need to merge with or preserve existing content rather than overwrite it. Use this when the user explicitly asks to update/save something to the knowledge base (e.g. a school schedule extracted from a photo). Special case: the entry named "system_prompt" is auto-injected into every future run as a standing instruction — use it (getKnowledge first, then append, never blindly overwrite) whenever the user asks you to remember a preference or behave differently going forward, not just for reference documents.',
     parametersJsonSchema: {
       type: 'object' as const,
       properties: {

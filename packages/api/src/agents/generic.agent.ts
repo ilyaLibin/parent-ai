@@ -1,10 +1,15 @@
 import type { Content, Part } from '@google/genai';
 import { getGeminiClient, GEMINI_MODEL } from '../services/gemini.service.js';
 import { toolDefinitions, executeTool } from './tool-registry.js';
-import { createTaskRun, completeTaskRun, updateTaskRunSteps, getRecentChatTurns, saveChatTurn } from '@parent-ai/shared';
+import { createTaskRun, completeTaskRun, updateTaskRunSteps, getRecentChatTurns, saveChatTurn, getKnowledgeByName } from '@parent-ai/shared';
 
 const HEBREW_DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 const FAMILY_TIMEZONE = 'Asia/Jerusalem';
+
+// A knowledge entry the agent itself can edit via saveKnowledge (e.g. "always do X
+// from now on") — auto-injected into every run's system instruction, giving a simple
+// self-updating standing-instructions mechanism without a code change per preference.
+const LEARNED_INSTRUCTIONS_KNOWLEDGE_NAME = 'system_prompt';
 
 // Short-lived conversation memory for Telegram chat — enough for a quick follow-up
 // ("one event") to resolve against the bot's immediately preceding question, not a
@@ -75,8 +80,18 @@ Rules:
 - createCalendarEvent and createTask are user-facing (Google Calendar / Google Tasks) — use them when the user directly asks to schedule or add something. createActionItem is an internal record used only by the scheduled report tasks that scan WhatsApp groups for homework/deadlines — do not use it for direct user requests.
 - The TTS engine used by sendTelegramAudio only supports English (and a few other non-Hebrew languages) — it cannot speak Hebrew or other unsupported languages. Whenever you call sendTelegramAudio, always translate the spoken text to English first, even if your text reply or the conversation is in Hebrew.
 - createScheduledTask creates a new recurring automated task (a different concept from createTask/Google Tasks and createCalendarEvent) — only use it when the user wants something to run repeatedly and unattended on a schedule. It is always created disabled for safety; always include the reviewUrl from the result in your reply so the user can review and enable it in the dashboard.
+- If the user asks you to remember something or behave a certain way going forward ("always do X from now on", "stop doing Y"), that's a standing instruction, not a one-off request: use saveKnowledge with name "${LEARNED_INSTRUCTIONS_KNOWLEDGE_NAME}" to persist it. First call getKnowledge on that name to see what's already there (it may not exist yet) and APPEND the new rule to the existing content — never overwrite what's already saved there unless the user is explicitly asking to remove/replace a prior rule.
 
-${getCurrentDateInfo()}`;
+${getCurrentDateInfo()}
+
+${buildLearnedInstructions()}`;
+}
+
+function buildLearnedInstructions(): string {
+  const entry = getKnowledgeByName(LEARNED_INSTRUCTIONS_KNOWLEDGE_NAME);
+  if (!entry?.content?.trim()) return '';
+  return `--- Standing instructions you previously saved (via saveKnowledge, name "${LEARNED_INSTRUCTIONS_KNOWLEDGE_NAME}") — follow these on every run ---
+${entry.content}`;
 }
 
 type SupportedImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
