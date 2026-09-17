@@ -642,6 +642,12 @@ export function getPendingMessages(): ScheduledMessage[] {
   `).all() as ScheduledMessage[];
 }
 
+// Only removes messages still pending — returns false (no-op) if already sent/failed
+// or the id doesn't exist, so the caller can tell "cancelled" apart from "too late".
+export function cancelScheduledMessage(id: number): boolean {
+  return db.prepare(`DELETE FROM scheduled_messages WHERE id = ? AND status = 'pending'`).run(id).changes > 0;
+}
+
 export function getMessageRawJson(messageId: string): string | null {
   const row = db.prepare('SELECT raw_json FROM messages WHERE id = ?').get(messageId) as { raw_json: string | null } | undefined;
   return row?.raw_json ?? null;

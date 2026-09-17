@@ -15,6 +15,7 @@ import {
   createCronJob,
   scheduleMessage,
   getPendingMessages,
+  cancelScheduledMessage,
   type Group,
 } from '@parent-ai/shared';
 import { sendTelegram, sendTelegramAudio } from '../services/telegram.service.js';
@@ -264,11 +265,25 @@ export const toolDefinitions: FunctionDeclaration[] = [
   },
   {
     name: 'listScheduledWhatsAppMessages',
-    description: 'List pending (not yet sent) scheduled WhatsApp messages.',
+    description: 'List pending (not yet sent) scheduled WhatsApp messages, including their id (needed for cancelScheduledWhatsAppMessage). Use this before cancelling, or when the user asks what\'s scheduled.',
     parametersJsonSchema: {
       type: 'object' as const,
       properties: {},
       required: [],
+    },
+  },
+  {
+    name: 'cancelScheduledWhatsAppMessage',
+    description: 'Cancel a pending scheduled WhatsApp message by id (from listScheduledWhatsAppMessages). Has no effect if it was already sent — check the result and tell the user if it was too late.',
+    parametersJsonSchema: {
+      type: 'object' as const,
+      properties: {
+        id: {
+          type: 'number',
+          description: 'The scheduled message id to cancel.',
+        },
+      },
+      required: ['id'],
     },
   },
   {
@@ -539,6 +554,13 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
         scheduledAt: new Date(m.scheduled_at).toISOString(),
       })),
     };
+  },
+
+  async cancelScheduledWhatsAppMessage(args) {
+    const cancelled = cancelScheduledMessage(args.id as number);
+    return cancelled
+      ? { success: true }
+      : { success: false, error: 'Not found, or already sent — too late to cancel.' };
   },
 
   async getCalendarEvents(args) {
