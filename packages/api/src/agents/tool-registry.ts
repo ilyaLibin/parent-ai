@@ -312,7 +312,7 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
     const now = Date.now();
     const since = now - hoursBack * 60 * 60 * 1000;
 
-    const groups: Group[] = groupIds ? getGroupsByIds(groupIds) : getGroups();
+    const groups: Group[] = groupIds ? getGroupsByIds(groupIds) : getGroups().filter((g) => g.tracked);
 
     const result = groups.map((g) => {
       const messages = getMessages(g.id, since, now);

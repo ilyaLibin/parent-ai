@@ -31,7 +31,7 @@ export async function rangeSummary(params: RangeSummaryParams): Promise<{
 
   const groups = params.groupIds
     ? getGroupsByIds(params.groupIds)
-    : getGroups();
+    : getGroups().filter((g) => g.tracked);
 
   const errors: string[] = [];
   let count = 0;
