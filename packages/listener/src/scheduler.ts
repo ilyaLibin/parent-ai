@@ -1,31 +1,46 @@
-import { WASocket, proto } from '@whiskeysockets/baileys';
-import { getGroupByName, saveChatTurn, getDueMessages, markMessageSent, markMessageFailed } from '@parent-ai/shared';
+import { WASocket, proto, downloadMediaMessage } from '@whiskeysockets/baileys';
+import { saveChatTurn, getDueMessages, markMessageSent, markMessageFailed } from '@parent-ai/shared';
 
 const API_URL = process.env.API_URL || 'http://localhost:3033';
-const SCHEDULER_CHAT_NAME = process.env.SCHEDULER_CHAT_NAME || '_MESSAGE_SCHEDULER';
 
-// Resolved lazily (the group may not exist yet at startup) and cached — undefined
-// means "not looked up yet", null means "looked up, doesn't exist".
-let schedulerChatId: string | null | undefined;
-
-function getSchedulerChatId(): string | null {
-  if (schedulerChatId === undefined) {
-    const group = getGroupByName(SCHEDULER_CHAT_NAME);
-    schedulerChatId = group?.id ?? null;
-    if (schedulerChatId) console.log(`📬 Message scheduler chat resolved: ${schedulerChatId}`);
-  }
-  return schedulerChatId;
-}
+// Bound to the group's immutable JID, not its display name — the display name can
+// (and has) changed over time (e.g. "_MESSAGE_SCHEDULER" → "Cold Brain"), but WhatsApp
+// group JIDs never do. This exact ID has been stable since the very first version of
+// this feature, long before the current name.
+const SCHEDULER_CHAT_ID = process.env.SCHEDULER_CHAT_ID || '120363423448230515@g.us';
 
 export function isSchedulerChat(jid: string | undefined | null): boolean {
-  return !!jid && jid === getSchedulerChatId();
+  return !!jid && jid === SCHEDULER_CHAT_ID;
 }
 
-// Handles a real-time message sent in the scheduler chat. A shared contact card
-// establishes the recipient (acked immediately, no LLM call needed); free text after
-// that is forwarded to the full agent (same /agent/run Telegram uses) with a chatId
-// scoped to this WhatsApp chat, so the 3-minute conversation window picks up the
-// contact context automatically — no bespoke "last shared contact" state needed.
+// Forwards a prompt (text and/or image) to the same /agent/run Telegram uses, with a
+// chatId scoped to this WhatsApp chat so the 3-minute conversation window applies here
+// too, and relays the reply back into WhatsApp.
+async function forwardToAgent(
+  sock: WASocket,
+  remoteJid: string,
+  chatId: string,
+  prompt: string | undefined,
+  image?: { data: string; mediaType: string }
+): Promise<void> {
+  try {
+    const res = await fetch(`${API_URL}/agent/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, image, chatId }),
+    });
+    const result = (await res.json()) as { resultText?: string | null; success: boolean; error?: string };
+    const reply = result.resultText || (result.success ? 'Done!' : `Error: ${result.error}`);
+    await sock.sendMessage(remoteJid, { text: reply });
+  } catch (err) {
+    console.error('[scheduler] Error:', err);
+    await sock.sendMessage(remoteJid, { text: `❌ Error: ${err instanceof Error ? err.message : String(err)}` });
+  }
+}
+
+// Handles a real-time message sent in the scheduler/assistant chat. A shared contact
+// card establishes a recipient for message-scheduling (acked immediately, no LLM call
+// needed) — everything else (text, images) goes to the full agent, same as Telegram.
 export async function handleSchedulerMessage(sock: WASocket, msg: proto.IWebMessageInfo): Promise<void> {
   const remoteJid = msg.key?.remoteJid;
   if (!remoteJid || msg.key?.fromMe) return;
@@ -50,24 +65,25 @@ export async function handleSchedulerMessage(sock: WASocket, msg: proto.IWebMess
     return;
   }
 
+  if (m.imageMessage) {
+    const caption = m.imageMessage.caption || undefined;
+    console.log(`🖼️ Scheduler: image received${caption ? `: "${caption.substring(0, 80)}"` : ''}`);
+    try {
+      const buffer = (await downloadMediaMessage(msg, 'buffer', {})) as Buffer;
+      const image = { data: buffer.toString('base64'), mediaType: m.imageMessage.mimetype || 'image/jpeg' };
+      await forwardToAgent(sock, remoteJid, chatId, caption, image);
+    } catch (err) {
+      console.error('[scheduler] Image download error:', err);
+      await sock.sendMessage(remoteJid, { text: `❌ Couldn't download that image: ${err instanceof Error ? err.message : String(err)}` });
+    }
+    return;
+  }
+
   const text = m.conversation || m.extendedTextMessage?.text;
   if (!text) return;
 
   console.log(`📬 Scheduler command: "${text.substring(0, 80)}"`);
-
-  try {
-    const res = await fetch(`${API_URL}/agent/run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: text, chatId }),
-    });
-    const result = (await res.json()) as { resultText?: string | null; success: boolean; error?: string };
-    const reply = result.resultText || (result.success ? 'Done!' : `Error: ${result.error}`);
-    await sock.sendMessage(remoteJid, { text: reply });
-  } catch (err) {
-    console.error('[scheduler] Error:', err);
-    await sock.sendMessage(remoteJid, { text: `❌ Error: ${err instanceof Error ? err.message : String(err)}` });
-  }
+  await forwardToAgent(sock, remoteJid, chatId, text);
 }
 
 // Sends due messages via the live socket — this has to live in the listener since
