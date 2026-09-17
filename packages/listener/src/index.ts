@@ -17,12 +17,14 @@ console.log(`
 async function main() {
   const { connectToWhatsApp } = await import('./connection.js');
   const { setupMessageListener, syncAllGroups } = await import('./listener.js');
+  const { startDueMessageSender } = await import('./scheduler.js');
 
   try {
     await connectToWhatsApp({
       onConnected: (sock) => {
         setupMessageListener(sock);
         syncAllGroups(sock);
+        startDueMessageSender(sock);
         console.log('\nReady! Messages from tracked groups will be stored.\n');
       },
       onDisconnected: (reason) => {

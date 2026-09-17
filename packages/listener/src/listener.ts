@@ -1,5 +1,6 @@
 import { WASocket, proto } from '@whiskeysockets/baileys';
 import { saveMessage, saveGroup, isGroupTracked, Message } from '@parent-ai/shared';
+import { isSchedulerChat, handleSchedulerMessage } from './scheduler.js';
 
 interface GroupMetadata {
   id: string;
@@ -66,6 +67,12 @@ export function setupMessageListener(sock: WASocket): void {
       // type: 'notify' = real-time, 'append' = historical sync
       const isHistorical = upsert.type === 'append';
       for (const msg of upsert.messages) {
+        // The message-scheduler chat is a command channel, not family content —
+        // route it separately instead of storing/tracking it like a normal group.
+        if (!isHistorical && isSchedulerChat(msg.key?.remoteJid)) {
+          await handleSchedulerMessage(sock, msg);
+          continue;
+        }
         await processMessage(sock, msg, isHistorical);
       }
     }

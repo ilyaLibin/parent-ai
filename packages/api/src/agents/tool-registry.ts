@@ -13,11 +13,34 @@ import {
   createActionItem,
   getActionItems,
   createCronJob,
+  scheduleMessage,
+  getPendingMessages,
   type Group,
 } from '@parent-ai/shared';
 import { sendTelegram, sendTelegramAudio } from '../services/telegram.service.js';
 import { createCalendarEvent as createGCalEvent, listEvents as listGCalEvents } from '../services/google-calendar.service.js';
 import { createTask as createGTask, listTasks as listGTasks } from '../services/google-tasks.service.js';
+
+const FAMILY_TIMEZONE = 'Asia/Jerusalem';
+
+// The model (and its own date-grounding context) works in naive Asia/Jerusalem
+// datetime strings with no UTC offset. `new Date(naiveString)` is NOT safe for that —
+// its interpretation depends on the runtime's own system timezone (UTC in Docker,
+// but whatever the dev machine happens to be locally), silently landing hours off.
+// Compute the real Asia/Jerusalem offset for that moment and attach it explicitly.
+function parseFamilyLocalDateTime(dateTimeStr: string): Date {
+  if (/[Zz]$|[+-]\d{2}:\d{2}$/.test(dateTimeStr)) {
+    return new Date(dateTimeStr); // already carries explicit timezone info
+  }
+  const anchor = new Date(`${dateTimeStr}Z`);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: FAMILY_TIMEZONE,
+    timeZoneName: 'longOffset',
+  }).formatToParts(anchor);
+  const tzName = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT+00:00';
+  const offset = tzName.replace('GMT', '') || '+00:00';
+  return new Date(`${dateTimeStr}${offset}`);
+}
 
 export const toolDefinitions: FunctionDeclaration[] = [
   {
@@ -210,6 +233,42 @@ export const toolDefinitions: FunctionDeclaration[] = [
         },
       },
       required: ['name', 'schedule', 'prompt'],
+    },
+  },
+  {
+    name: 'scheduleWhatsAppMessage',
+    description:
+      'Schedule a WhatsApp text message to be sent to a specific contact at a future (or near-immediate) time. Only use this in the WhatsApp message-scheduler chat, targeting a contact that was just shared via a contact card earlier in this conversation — never invent, guess, or reuse a phone number/JID from anywhere else. If the user\'s request includes the message text in quotes, use that exact text verbatim as messageText — do not paraphrase, reword, or "improve" it unless they explicitly ask you to fix grammar or add something.',
+    parametersJsonSchema: {
+      type: 'object' as const,
+      properties: {
+        recipientId: {
+          type: 'string',
+          description: 'The WhatsApp JID of the recipient, from a contact shared earlier in this conversation (e.g. "9725...@s.whatsapp.net").',
+        },
+        recipientName: {
+          type: 'string',
+          description: 'The recipient\'s display name, from the shared contact.',
+        },
+        messageText: {
+          type: 'string',
+          description: 'The exact message text to send.',
+        },
+        scheduledAt: {
+          type: 'string',
+          description: 'Datetime for when to send, in the same format as the current date/time given above (local Asia/Jerusalem time, no UTC offset, e.g. "2026-09-17T09:23:00"). Resolve relative times ("in 5 minutes", "tomorrow at 9am") against that current date/time.',
+        },
+      },
+      required: ['recipientId', 'messageText', 'scheduledAt'],
+    },
+  },
+  {
+    name: 'listScheduledWhatsAppMessages',
+    description: 'List pending (not yet sent) scheduled WhatsApp messages.',
+    parametersJsonSchema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
     },
   },
   {
@@ -453,6 +512,33 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
     } catch (err) {
       return { success: false, error: `Failed to create scheduled task: ${err instanceof Error ? err.message : String(err)}` };
     }
+  },
+
+  async scheduleWhatsAppMessage(args) {
+    try {
+      const id = scheduleMessage(
+        args.recipientId as string,
+        (args.recipientName as string) || null,
+        args.messageText as string,
+        parseFamilyLocalDateTime(args.scheduledAt as string)
+      );
+      return { success: true, id };
+    } catch (err) {
+      return { success: false, error: `Failed to schedule message: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  },
+
+  async listScheduledWhatsAppMessages() {
+    const pending = getPendingMessages();
+    return {
+      count: pending.length,
+      messages: pending.map((m) => ({
+        id: m.id,
+        recipientName: m.recipient_name,
+        messageText: m.message_text,
+        scheduledAt: new Date(m.scheduled_at).toISOString(),
+      })),
+    };
   },
 
   async getCalendarEvents(args) {
