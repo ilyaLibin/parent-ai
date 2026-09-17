@@ -14,8 +14,10 @@ const whatsapp = new Hono();
 
 whatsapp.get('/groups', (c) => {
   const excludeHidden = c.req.query('excludeHidden') === 'true';
-  const all = getGroups();
-  const filtered = excludeHidden ? all.filter((g) => !g.hidden) : all;
+  const trackedOnly = c.req.query('trackedOnly') === 'true';
+  const filtered = getGroups().filter((g) =>
+    (!excludeHidden || !g.hidden) && (!trackedOnly || g.tracked)
+  );
   const groups = filtered.map((g) => ({
     ...g,
     messageCount: getMessageCount(g.id),
