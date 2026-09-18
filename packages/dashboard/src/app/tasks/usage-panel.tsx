@@ -64,6 +64,9 @@ function MonthlyCostChart({ data }: { data: MonthlyCost[] }) {
             <circle cx={p.x} cy={p.y} r={3.5} className="fill-warning">
               <title>{formatMonthLabel(p.month)} avg/run: ${p.avgCost.toFixed(3)}</title>
             </circle>
+            <text x={p.x} y={p.y + 14} textAnchor="middle" className="fill-current text-warning" style={{ fontSize: 10 }}>
+              ${p.avgCost.toFixed(2)}
+            </text>
           </g>
         ))}
         {totalPoints.map((p) => (
