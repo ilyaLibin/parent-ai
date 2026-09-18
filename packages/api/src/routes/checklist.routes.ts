@@ -1,8 +1,23 @@
 import { Hono } from 'hono';
-import { getChecklistItemById, setChecklistItemChecked, setActionItemDone } from '@parent-ai/shared';
+import { getChecklistItemById, setChecklistItemChecked, setActionItemDone, createChecklistItem } from '@parent-ai/shared';
 import { setTaskStatus as setGTaskStatus } from '../services/google-tasks.service.js';
 
 export const checklist = new Hono();
+
+checklist.post('/checklist-items', async (c) => {
+  const body = await c.req.json<{ label: string; entityType?: string; entityId?: string }>();
+  if (!body.label) return c.json({ error: 'label is required' }, 400);
+  const item = createChecklistItem({ label: body.label, entity_type: body.entityType ?? null, entity_id: body.entityId ?? null });
+  return c.json(item, 201);
+});
+
+checklist.get('/checklist-items', (c) => {
+  const idsParam = c.req.query('ids');
+  if (!idsParam) return c.json({ error: 'ids query param is required (comma-separated)' }, 400);
+  const ids = idsParam.split(',').map(Number).filter((n) => !Number.isNaN(n));
+  const items = ids.map((id) => getChecklistItemById(id)).filter((item) => !!item);
+  return c.json(items);
+});
 
 checklist.post('/checklist-items/:id/toggle', async (c) => {
   const id = Number(c.req.param('id'));
