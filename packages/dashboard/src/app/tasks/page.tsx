@@ -92,13 +92,19 @@ export default async function TasksPage() {
   const taskMap = new Map(tasks.map((t) => [t.id, t]));
 
   // Monthly cost (chronological, since getRunStats returns ascending started_at)
-  const monthlyCostMap = new Map<string, number>();
+  const monthlyCostMap = new Map<string, { totalCost: number; runCount: number }>();
   for (const run of stats) {
     const tokens = run.token_usage_json ? JSON.parse(run.token_usage_json) : null;
     const key = monthKey(run.started_at);
-    monthlyCostMap.set(key, (monthlyCostMap.get(key) || 0) + estimateCostValue(run.model, tokens));
+    const existing = monthlyCostMap.get(key) || { totalCost: 0, runCount: 0 };
+    monthlyCostMap.set(key, { totalCost: existing.totalCost + estimateCostValue(run.model, tokens), runCount: existing.runCount + 1 });
   }
-  const monthlyCost: MonthlyCost[] = Array.from(monthlyCostMap.entries()).map(([month, cost]) => ({ month, cost }));
+  const monthlyCost: MonthlyCost[] = Array.from(monthlyCostMap.entries()).map(([month, agg]) => ({
+    month,
+    totalCost: agg.totalCost,
+    runCount: agg.runCount,
+    avgCost: agg.runCount > 0 ? agg.totalCost / agg.runCount : 0,
+  }));
 
   // Most expensive tasks this month
   const currentMonth = monthKey(Date.now());

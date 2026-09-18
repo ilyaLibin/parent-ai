@@ -1,6 +1,8 @@
 export interface MonthlyCost {
   month: string; // 'YYYY-MM'
-  cost: number;
+  totalCost: number;
+  runCount: number;
+  avgCost: number;
 }
 
 export interface ExpensiveTask {
@@ -20,39 +22,57 @@ function MonthlyCostChart({ data }: { data: MonthlyCost[] }) {
   if (data.length === 0) return <p className="text-fg-muted text-sm">No usage yet.</p>;
 
   const width = 640;
-  const height = 200;
+  const height = 220;
   const padX = 32;
-  const padY = 20;
-  const maxCost = Math.max(...data.map((d) => d.cost), 0.01);
+  const padY = 24;
+  const maxTotal = Math.max(...data.map((d) => d.totalCost), 0.01);
+  const maxAvg = Math.max(...data.map((d) => d.avgCost), 0.01);
 
-  const points = data.map((d, i) => {
-    const x = data.length === 1 ? width / 2 : padX + (i / (data.length - 1)) * (width - padX * 2);
-    const y = height - padY - (d.cost / maxCost) * (height - padY * 2);
-    return { x, y, ...d };
-  });
+  const xFor = (i: number) => (data.length === 1 ? width / 2 : padX + (i / (data.length - 1)) * (width - padX * 2));
 
-  const polyline = points.map((p) => `${p.x},${p.y}`).join(' ');
+  const totalPoints = data.map((d, i) => ({ x: xFor(i), y: height - padY - (d.totalCost / maxTotal) * (height - padY * 2), ...d }));
+  const avgPoints = data.map((d, i) => ({ x: xFor(i), y: height - padY - (d.avgCost / maxAvg) * (height - padY * 2), ...d }));
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48" preserveAspectRatio="xMidYMid meet">
-      <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} className="stroke-border" strokeWidth={1} />
-      {points.length > 1 && (
-        <polyline points={polyline} fill="none" className="stroke-accent" strokeWidth={2} />
-      )}
-      {points.map((p) => (
-        <g key={p.month}>
-          <circle cx={p.x} cy={p.y} r={4} className="fill-accent">
-            <title>{formatMonthLabel(p.month)}: ${p.cost.toFixed(2)}</title>
-          </circle>
-          <text x={p.x} y={height - 4} textAnchor="middle" className="fill-current text-fg-muted" style={{ fontSize: 10 }}>
+    <div>
+      <div className="flex items-center gap-4 mb-2 text-xs text-fg-muted">
+        <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-full bg-accent" /> Total cost</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-full bg-warning" /> Avg cost / run</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-52" preserveAspectRatio="xMidYMid meet">
+        <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} className="stroke-border" strokeWidth={1} />
+
+        {totalPoints.length > 1 && (
+          <polyline points={totalPoints.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" className="stroke-accent" strokeWidth={2} />
+        )}
+        {avgPoints.length > 1 && (
+          <polyline points={avgPoints.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" className="stroke-warning" strokeWidth={2} strokeDasharray="4 3" />
+        )}
+
+        {totalPoints.map((p) => (
+          <g key={`total-${p.month}`}>
+            <circle cx={p.x} cy={p.y} r={4} className="fill-accent">
+              <title>{formatMonthLabel(p.month)} total: ${p.totalCost.toFixed(2)} ({p.runCount} runs)</title>
+            </circle>
+            <text x={p.x} y={p.y - 8} textAnchor="middle" className="fill-current text-fg-secondary" style={{ fontSize: 10 }}>
+              ${p.totalCost.toFixed(2)}
+            </text>
+          </g>
+        ))}
+        {avgPoints.map((p) => (
+          <g key={`avg-${p.month}`}>
+            <circle cx={p.x} cy={p.y} r={3.5} className="fill-warning">
+              <title>{formatMonthLabel(p.month)} avg/run: ${p.avgCost.toFixed(3)}</title>
+            </circle>
+          </g>
+        ))}
+        {totalPoints.map((p) => (
+          <text key={`label-${p.month}`} x={p.x} y={height - 6} textAnchor="middle" className="fill-current text-fg-muted" style={{ fontSize: 10 }}>
             {formatMonthLabel(p.month)}
           </text>
-          <text x={p.x} y={p.y - 8} textAnchor="middle" className="fill-current text-fg-secondary" style={{ fontSize: 10 }}>
-            ${p.cost.toFixed(2)}
-          </text>
-        </g>
-      ))}
-    </svg>
+        ))}
+      </svg>
+    </div>
   );
 }
 
