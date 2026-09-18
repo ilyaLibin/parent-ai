@@ -73,7 +73,7 @@ interface RunStat {
 }
 
 async function getRunStats(): Promise<RunStat[]> {
-  const res = await fetch(`${API_URL}/task-runs/stats?sinceDays=180`, { cache: 'no-store' });
+  const res = await fetch(`${API_URL}/task-runs/stats?sinceDays=400`, { cache: 'no-store' });
   if (!res.ok) return [];
   return res.json();
 }

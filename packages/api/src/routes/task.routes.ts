@@ -74,7 +74,7 @@ task.get('/task-runs', (c) => {
 });
 
 task.get('/task-runs/stats', (c) => {
-  const sinceDays = c.req.query('sinceDays') ? Number(c.req.query('sinceDays')) : 180;
+  const sinceDays = c.req.query('sinceDays') ? Number(c.req.query('sinceDays')) : 400;
   const since = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
   return c.json(getTaskRunStats(since));
 });
