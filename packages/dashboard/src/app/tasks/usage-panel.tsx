@@ -18,73 +18,76 @@ function formatMonthLabel(month: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 }
 
-function MonthlyCostChart({ data }: { data: MonthlyCost[] }) {
+interface LineChartPoint {
+  month: string;
+  value: number;
+  runCount: number;
+}
+
+// A single line, on its own honest scale — deliberately not overlaying total cost and
+// avg cost/run on one shared axis: their magnitudes differ by orders of magnitude, so a
+// shared/independently-normalized scale makes a line's height misrepresent its value
+// relative to the other line (a viewer naturally reads "higher on the chart" as "bigger").
+function SingleLineChart({ data, strokeClass, fillClass, format, dashed }: { data: LineChartPoint[]; strokeClass: string; fillClass: string; format: (v: number) => string; dashed?: boolean }) {
   if (data.length === 0) return <p className="text-fg-muted text-sm">No usage yet.</p>;
 
   const width = 640;
-  const height = 220;
+  const height = 180;
   const padX = 32;
-  const padY = 24;
-  const maxTotal = Math.max(...data.map((d) => d.totalCost), 0.01);
-  const maxAvg = Math.max(...data.map((d) => d.avgCost), 0.01);
+  const padTop = 24;
+  const padBottom = 44; // room for a 2-line x-axis label (month + run count)
+  const maxValue = Math.max(...data.map((d) => d.value), 0.001);
+  const plotHeight = height - padTop - padBottom;
 
   const xFor = (i: number) => (data.length === 1 ? width / 2 : padX + (i / (data.length - 1)) * (width - padX * 2));
-
-  const totalPoints = data.map((d, i) => ({ x: xFor(i), y: height - padY - (d.totalCost / maxTotal) * (height - padY * 2), ...d }));
-  const avgPoints = data.map((d, i) => ({ x: xFor(i), y: height - padY - (d.avgCost / maxAvg) * (height - padY * 2), ...d }));
+  const points = data.map((d, i) => ({ x: xFor(i), y: height - padBottom - (d.value / maxValue) * plotHeight, ...d }));
 
   return (
-    <div>
-      <div className="flex items-center gap-4 mb-2 text-xs text-fg-muted">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-full bg-accent" /> Total cost</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-full bg-warning" /> Avg cost / run</span>
-      </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-52" preserveAspectRatio="xMidYMid meet">
-        <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} className="stroke-border" strokeWidth={1} />
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-44" preserveAspectRatio="xMidYMid meet">
+      <line x1={padX} y1={height - padBottom} x2={width - padX} y2={height - padBottom} className="stroke-border" strokeWidth={1} />
 
-        {totalPoints.length > 1 && (
-          <polyline points={totalPoints.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" className="stroke-accent" strokeWidth={2} />
-        )}
-        {avgPoints.length > 1 && (
-          <polyline points={avgPoints.map((p) => `${p.x},${p.y}`).join(' ')} fill="none" className="stroke-warning" strokeWidth={2} strokeDasharray="4 3" />
-        )}
+      {points.length > 1 && (
+        <polyline
+          points={points.map((p) => `${p.x},${p.y}`).join(' ')}
+          fill="none"
+          className={strokeClass}
+          strokeWidth={2}
+          strokeDasharray={dashed ? '4 3' : undefined}
+        />
+      )}
 
-        {totalPoints.map((p) => (
-          <g key={`total-${p.month}`}>
-            <circle cx={p.x} cy={p.y} r={4} className="fill-accent">
-              <title>{formatMonthLabel(p.month)} total: ${p.totalCost.toFixed(2)} ({p.runCount} runs)</title>
-            </circle>
-            <text x={p.x} y={p.y - 8} textAnchor="middle" className="fill-current text-fg-secondary" style={{ fontSize: 10 }}>
-              ${p.totalCost.toFixed(2)}
-            </text>
-          </g>
-        ))}
-        {avgPoints.map((p) => (
-          <g key={`avg-${p.month}`}>
-            <circle cx={p.x} cy={p.y} r={3.5} className="fill-warning">
-              <title>{formatMonthLabel(p.month)} avg/run: ${p.avgCost.toFixed(3)}</title>
-            </circle>
-            <text x={p.x} y={p.y + 14} textAnchor="middle" className="fill-current text-warning" style={{ fontSize: 10 }}>
-              ${p.avgCost.toFixed(2)}
-            </text>
-          </g>
-        ))}
-        {totalPoints.map((p) => (
-          <text key={`label-${p.month}`} x={p.x} y={height - 6} textAnchor="middle" className="fill-current text-fg-muted" style={{ fontSize: 10 }}>
+      {points.map((p) => (
+        <g key={p.month}>
+          <circle cx={p.x} cy={p.y} r={4} className={fillClass} />
+          <text x={p.x} y={p.y - 10} textAnchor="middle" className="fill-current text-fg-secondary" style={{ fontSize: 10 }}>
+            {format(p.value)}
+          </text>
+          <text x={p.x} y={height - padBottom + 16} textAnchor="middle" className="fill-current text-fg-muted" style={{ fontSize: 10 }}>
             {formatMonthLabel(p.month)}
           </text>
-        ))}
-      </svg>
-    </div>
+          <text x={p.x} y={height - padBottom + 28} textAnchor="middle" className="fill-current text-fg-muted" style={{ fontSize: 9 }}>
+            {p.runCount} run{p.runCount === 1 ? '' : 's'}
+          </text>
+        </g>
+      ))}
+    </svg>
   );
 }
 
 export function UsagePanel({ monthlyCost, expensiveTasks }: { monthlyCost: MonthlyCost[]; expensiveTasks: ExpensiveTask[] }) {
+  const totalData: LineChartPoint[] = monthlyCost.map((d) => ({ month: d.month, value: d.totalCost, runCount: d.runCount }));
+  const avgData: LineChartPoint[] = monthlyCost.map((d) => ({ month: d.month, value: d.avgCost, runCount: d.runCount }));
+
   return (
     <div className="space-y-6">
       <div className="card-raised rounded-lg p-4">
-        <h3 className="text-sm font-bold text-fg-muted uppercase tracking-wider mb-4">Monthly cost</h3>
-        <MonthlyCostChart data={monthlyCost} />
+        <h3 className="text-sm font-bold text-fg-muted uppercase tracking-wider mb-4">Total cost / month</h3>
+        <SingleLineChart data={totalData} strokeClass="stroke-accent" fillClass="fill-accent" format={(v) => `$${v.toFixed(2)}`} />
+      </div>
+
+      <div className="card-raised rounded-lg p-4">
+        <h3 className="text-sm font-bold text-fg-muted uppercase tracking-wider mb-4">Avg cost / run</h3>
+        <SingleLineChart data={avgData} strokeClass="stroke-warning" fillClass="fill-warning" format={(v) => `$${v.toFixed(2)}`} dashed />
       </div>
 
       <div className="card-raised rounded-lg overflow-hidden">
