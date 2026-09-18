@@ -30,6 +30,7 @@ interface TaskRun {
   error: string | null;
   model: string | null;
   token_usage_json: string | null;
+  prompt: string | null;
 }
 
 interface Task {
@@ -57,6 +58,7 @@ export function RunsTable({ runs, taskMap, showTask = true }: { runs: TaskRun[];
         <thead>
           <tr className="border-b border-border text-left text-fg-muted text-xs uppercase tracking-wider">
             {showTask && <th className="py-3 px-4">Task</th>}
+            <th className="py-3 px-4">Prompt</th>
             <th className="py-3 px-4">Started</th>
             <th className="py-3 px-4">Duration</th>
             <th className="py-3 px-4">Status</th>
@@ -79,6 +81,9 @@ export function RunsTable({ runs, taskMap, showTask = true }: { runs: TaskRun[];
                     {task?.name || `#${run.task_id}`}
                   </td>
                 )}
+                <td className="py-3 px-4 text-fg-secondary max-w-xs truncate" title={run.prompt || undefined} dir="auto">
+                  {run.prompt ? run.prompt.split('\n')[0].slice(0, 80) : '-'}
+                </td>
                 <td className="py-3 px-4 text-fg-secondary">{formatTime(run.started_at)}</td>
                 <td className="py-3 px-4 text-fg-muted">{formatDuration(run.started_at, run.completed_at)}</td>
                 <td className="py-3 px-4">

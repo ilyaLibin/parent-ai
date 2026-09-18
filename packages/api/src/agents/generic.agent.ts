@@ -138,7 +138,7 @@ export async function runGenericAgent(opts: {
 }): Promise<AgentResult> {
   const startedAt = Date.now();
 
-  const runId = createTaskRun({ task_id: opts.taskId, started_at: startedAt, model: GEMINI_MODEL });
+  const runId = createTaskRun({ task_id: opts.taskId, started_at: startedAt, model: GEMINI_MODEL, prompt: opts.prompt });
 
   const steps: StepEntry[] = [];
   const tokenUsage = { input_tokens: 0, output_tokens: 0 };

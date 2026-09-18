@@ -209,6 +209,12 @@ db.exec(`
   );
 `);
 
+// Migrate: add prompt column to task_runs if missing — the actual prompt/message a
+// run was fired with, so the runs list/detail can show what it was about (cron_jobs.prompt
+// is fixed per task, but ad-hoc runs like telegram-chat get a different prompt every time).
+const taskRunColumns = db.pragma('table_info(task_runs)') as { name: string }[];
+if (!taskRunColumns.some((c) => c.name === 'prompt')) db.exec('ALTER TABLE task_runs ADD COLUMN prompt TEXT');
+
 // Migrate: add color column to action_items if missing
 const actionColumns = db.pragma('table_info(action_items)') as { name: string }[];
 const actionColNames = new Set(actionColumns.map((c) => c.name));
@@ -816,11 +822,12 @@ export interface TaskRun {
   result_text: string | null;
   model: string | null;
   token_usage_json: string | null;
+  prompt: string | null;
 }
 
-export function createTaskRun(run: { task_id: number; started_at: number; model?: string | null }): number {
-  const result = db.prepare('INSERT INTO task_runs (task_id, started_at, model) VALUES (?, ?, ?)')
-    .run(run.task_id, run.started_at, run.model ?? null);
+export function createTaskRun(run: { task_id: number; started_at: number; model?: string | null; prompt?: string | null }): number {
+  const result = db.prepare('INSERT INTO task_runs (task_id, started_at, model, prompt) VALUES (?, ?, ?, ?)')
+    .run(run.task_id, run.started_at, run.model ?? null, run.prompt ?? null);
   return result.lastInsertRowid as number;
 }
 

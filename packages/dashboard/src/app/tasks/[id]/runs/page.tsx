@@ -14,6 +14,7 @@ interface TaskRun {
   error: string | null;
   model: string | null;
   token_usage_json: string | null;
+  prompt: string | null;
 }
 
 interface Task {

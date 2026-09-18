@@ -21,6 +21,7 @@ interface TaskRun {
   result_text: string | null;
   model: string | null;
   token_usage_json: string | null;
+  prompt: string | null;
 }
 
 async function getTask(id: string): Promise<Task | null> {
@@ -117,6 +118,13 @@ export default async function RunDetailPage({ params }: { params: Promise<{ id: 
       {run.error && (
         <div className="bg-error/10 border border-error/20 rounded-lg p-3 mb-6 text-sm text-error">
           {run.error}
+        </div>
+      )}
+
+      {run.prompt && (
+        <div className="card-raised rounded-lg p-4 mb-6">
+          <div className="text-xs text-fg-muted mb-2 uppercase tracking-wider">prompt</div>
+          <div className="text-sm whitespace-pre-wrap font-content" dir="auto">{run.prompt}</div>
         </div>
       )}
 
