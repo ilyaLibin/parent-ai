@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getCronJob, getCronJobs, createCronJob, getTaskRuns, getTaskRun } from '@parent-ai/shared';
+import { getCronJob, getCronJobs, createCronJob, getTaskRuns, getTaskRun, getTaskRunStats } from '@parent-ai/shared';
 import { runGenericAgent } from '../agents/generic.agent.js';
 
 const task = new Hono();
@@ -71,6 +71,12 @@ task.get('/task-runs', (c) => {
   const limit = c.req.query('limit') ? Number(c.req.query('limit')) : 50;
   const runs = getTaskRuns(taskId, limit);
   return c.json(runs);
+});
+
+task.get('/task-runs/stats', (c) => {
+  const sinceDays = c.req.query('sinceDays') ? Number(c.req.query('sinceDays')) : 180;
+  const since = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
+  return c.json(getTaskRunStats(since));
 });
 
 task.get('/task-runs/:id', (c) => {

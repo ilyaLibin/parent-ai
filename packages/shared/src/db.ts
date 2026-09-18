@@ -851,6 +851,21 @@ export function getTaskRun(id: number): TaskRun | undefined {
   return db.prepare('SELECT * FROM task_runs WHERE id = ?').get(id) as TaskRun | undefined;
 }
 
+export interface TaskRunStat {
+  id: number;
+  task_id: number;
+  started_at: number;
+  model: string | null;
+  token_usage_json: string | null;
+}
+
+// Lightweight variant for usage/cost analytics — deliberately excludes steps_json
+// (can be large per row) and other text blobs, so it stays cheap even over months of history.
+export function getTaskRunStats(sinceMs: number): TaskRunStat[] {
+  return db.prepare('SELECT id, task_id, started_at, model, token_usage_json FROM task_runs WHERE started_at >= ? ORDER BY started_at ASC')
+    .all(sinceMs) as TaskRunStat[];
+}
+
 export function getDailyMessageCounts(sinceTimestamp: number, groupIds?: string[]): { date: string; count: number }[] {
   if (groupIds && groupIds.length > 0) {
     const placeholders = groupIds.map(() => '?').join(',');
