@@ -36,11 +36,18 @@ interface SummaryResult {
   errors: string[];
 }
 
+interface ChecklistResultItem {
+  id: number;
+  label: string;
+  checked: boolean;
+}
+
 interface AgentResult {
   success: boolean;
   runId?: number;
   steps?: unknown[];
   resultText?: string | null;
+  checklist?: ChecklistResultItem[];
   error?: string;
 }
 
@@ -71,6 +78,10 @@ export async function runAgent(
   chatId?: string
 ): Promise<AgentResult> {
   return request('/agent/run', { method: 'POST', body: { prompt, image, audio, chatId } });
+}
+
+export async function toggleChecklistItem(id: number): Promise<{ success: boolean; id: number; label: string; checked: boolean }> {
+  return request(`/checklist-items/${id}/toggle`, { method: 'POST' });
 }
 
 export async function executeTaskByName(name: string): Promise<AgentResult> {

@@ -198,12 +198,26 @@ db.exec(`
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS checklist_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id TEXT,
+    checked INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // Migrate: add color column to action_items if missing
 const actionColumns = db.pragma('table_info(action_items)') as { name: string }[];
 const actionColNames = new Set(actionColumns.map((c) => c.name));
 if (!actionColNames.has('color')) db.exec('ALTER TABLE action_items ADD COLUMN color TEXT');
+
+// Migrate: add done column to action_items if missing — distinct from `dismissed`
+// (which excludes an item from getActionItems entirely, used by report tasks to avoid
+// re-surfacing something). `done` is purely "the user checked this off" for checklists.
+if (!actionColNames.has('done')) db.exec('ALTER TABLE action_items ADD COLUMN done INTEGER NOT NULL DEFAULT 0');
 
 // Migrate: add new columns to cron_jobs if missing (for existing databases)
 const cronColumns = db.pragma('table_info(cron_jobs)') as { name: string }[];
@@ -862,6 +876,7 @@ export interface ActionItem {
   color: string | null;
   created_at: string;
   dismissed: boolean;
+  done: boolean;
 }
 
 interface ActionItemRow {
@@ -874,10 +889,11 @@ interface ActionItemRow {
   color: string | null;
   created_at: string;
   dismissed: number;
+  done: number;
 }
 
 function rowToActionItem(row: ActionItemRow): ActionItem {
-  return { ...row, dismissed: row.dismissed === 1 };
+  return { ...row, dismissed: row.dismissed === 1, done: row.done === 1 };
 }
 
 export function getActionItems(from?: string, to?: string): ActionItem[] {
@@ -900,8 +916,61 @@ export function dismissActionItem(id: number): boolean {
   return db.prepare('UPDATE action_items SET dismissed = 1 WHERE id = ?').run(id).changes > 0;
 }
 
+export function getActionItemById(id: number): ActionItem | undefined {
+  const row = db.prepare('SELECT * FROM action_items WHERE id = ?').get(id) as ActionItemRow | undefined;
+  return row ? rowToActionItem(row) : undefined;
+}
+
+export function setActionItemDone(id: number, done: boolean): ActionItem | undefined {
+  db.prepare('UPDATE action_items SET done = ? WHERE id = ?').run(done ? 1 : 0, id);
+  return getActionItemById(id);
+}
+
 export function deleteActionItem(id: number): boolean {
   return db.prepare('DELETE FROM action_items WHERE id = ?').run(id).changes > 0;
+}
+
+// Checklist items — the interactive tap-to-check UX for AI-generated action-item-style
+// replies (not a Google Tasks replacement). Each item optionally binds to a backing
+// entity (an action_items row or a Google Task) via entity_type/entity_id; toggling it
+// syncs that entity too. Items with no entity_type are free-standing and only live here.
+export interface ChecklistItem {
+  id: number;
+  label: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  checked: boolean;
+  created_at: string;
+}
+
+interface ChecklistItemRow {
+  id: number;
+  label: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  checked: number;
+  created_at: string;
+}
+
+function rowToChecklistItem(row: ChecklistItemRow): ChecklistItem {
+  return { ...row, checked: row.checked === 1 };
+}
+
+export function createChecklistItem(item: { label: string; entity_type?: string | null; entity_id?: string | null; checked?: boolean }): ChecklistItem {
+  const result = db.prepare(
+    'INSERT INTO checklist_items (label, entity_type, entity_id, checked) VALUES (?, ?, ?, ?)'
+  ).run(item.label, item.entity_type ?? null, item.entity_id ?? null, item.checked ? 1 : 0);
+  return rowToChecklistItem(db.prepare('SELECT * FROM checklist_items WHERE id = ?').get(result.lastInsertRowid) as ChecklistItemRow);
+}
+
+export function getChecklistItemById(id: number): ChecklistItem | undefined {
+  const row = db.prepare('SELECT * FROM checklist_items WHERE id = ?').get(id) as ChecklistItemRow | undefined;
+  return row ? rowToChecklistItem(row) : undefined;
+}
+
+export function setChecklistItemChecked(id: number, checked: boolean): ChecklistItem | undefined {
+  db.prepare('UPDATE checklist_items SET checked = ? WHERE id = ?').run(checked ? 1 : 0, id);
+  return getChecklistItemById(id);
 }
 
 // Integrations

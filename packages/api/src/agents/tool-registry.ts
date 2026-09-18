@@ -12,15 +12,17 @@ import {
   updateKnowledgeById,
   createActionItem,
   getActionItems,
+  getActionItemById,
   createCronJob,
   scheduleMessage,
   getPendingMessages,
   cancelScheduledMessage,
+  createChecklistItem,
   type Group,
 } from '@parent-ai/shared';
 import { sendTelegram, sendTelegramAudio } from '../services/telegram.service.js';
 import { createCalendarEvent as createGCalEvent, listEvents as listGCalEvents } from '../services/google-calendar.service.js';
-import { createTask as createGTask, listTasks as listGTasks } from '../services/google-tasks.service.js';
+import { createTask as createGTask, listTasks as listGTasks, getTask as getGTask } from '../services/google-tasks.service.js';
 
 const FAMILY_TIMEZONE = 'Asia/Jerusalem';
 
@@ -377,6 +379,30 @@ export const toolDefinitions: FunctionDeclaration[] = [
       required: [],
     },
   },
+  {
+    name: 'presentChecklist',
+    description:
+      'Render your reply as a tappable checklist instead of plain text. Use this whenever the answer is a list of action items / things to do / things not to forget (e.g. "what should I put in Aviv\'s bag today", "what does he have going on this week") — NOT for general Q&A or single facts. Each item can optionally link to a real record so ticking it in Telegram actually marks that record done: pass actionItemId for an item that came from getActionItems/createActionItem, or googleTaskId for one from listTasks/createTask. Leave both out for a plain one-off reminder that only lives in the checklist itself. This does not replace createActionItem/createTask — call those first if the item doesn\'t exist yet, then reference it here.',
+    parametersJsonSchema: {
+      type: 'object' as const,
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              label: { type: 'string', description: 'The checklist line text shown to the user.' },
+              actionItemId: { type: 'number', description: 'Optional id of an existing action_items row this line represents.' },
+              googleTaskId: { type: 'string', description: 'Optional id of an existing Google Task this line represents.' },
+            },
+            required: ['label'],
+          },
+          description: 'The checklist lines to show, in order.',
+        },
+      },
+      required: ['items'],
+    },
+  },
 ];
 
 const toolImplementations: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
@@ -623,6 +649,37 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
       color: args.color as string | undefined,
     });
     return { success: true, id: item.id, description: item.description, date: item.date };
+  },
+
+  async presentChecklist(args) {
+    const items = args.items as { label: string; actionItemId?: number; googleTaskId?: string }[];
+
+    const created = await Promise.all(items.map(async (input) => {
+      let entityType: string | null = null;
+      let entityId: string | null = null;
+      let checked = false;
+
+      if (input.actionItemId != null) {
+        entityType = 'action_item';
+        entityId = String(input.actionItemId);
+        const existing = getActionItemById(input.actionItemId);
+        checked = existing?.done ?? false;
+      } else if (input.googleTaskId) {
+        entityType = 'google_tasks_task';
+        entityId = input.googleTaskId;
+        try {
+          const task = await getGTask(input.googleTaskId);
+          checked = task.status === 'completed';
+        } catch {
+          checked = false;
+        }
+      }
+
+      const row = createChecklistItem({ label: input.label, entity_type: entityType, entity_id: entityId, checked });
+      return { id: row.id, label: row.label, checked: row.checked };
+    }));
+
+    return { success: true, items: created };
   },
 };
 

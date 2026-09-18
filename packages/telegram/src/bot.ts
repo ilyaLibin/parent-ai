@@ -2,6 +2,7 @@ import { Bot } from 'grammy';
 import { summaryFeature } from './features/summary.js';
 import { statusFeature } from './features/status.js';
 import { chatFeature } from './features/chat.js';
+import { checklistFeature } from './features/checklist.js';
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 if (!token) {
@@ -13,6 +14,7 @@ export const bot = new Bot(token);
 // Register command features
 bot.use(summaryFeature);
 bot.use(statusFeature);
+bot.use(checklistFeature);
 
 // Chat feature handles free-text messages (must be last)
 bot.use(chatFeature);

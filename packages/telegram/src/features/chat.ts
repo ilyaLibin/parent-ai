@@ -1,4 +1,4 @@
-import { Composer, type Context } from 'grammy';
+import { Composer, InlineKeyboard, type Context } from 'grammy';
 import * as api from '../api-client.js';
 import { replyFormatted } from '../reply.js';
 
@@ -38,6 +38,14 @@ function withQuotedContext(ctx: Context, prompt?: string): string | undefined {
   return prompt ? `${context}\n${prompt}` : context;
 }
 
+function buildChecklistKeyboard(items: { id: number; label: string; checked: boolean }[]): InlineKeyboard {
+  const keyboard = new InlineKeyboard();
+  for (const item of items) {
+    keyboard.text(`${item.checked ? '✅' : '⬜'} ${item.label}`, `ci:${item.id}`).row();
+  }
+  return keyboard;
+}
+
 async function runAndReply(
   ctx: Context,
   prompt?: string,
@@ -49,6 +57,12 @@ async function runAndReply(
     const result = await api.runAgent(withQuotedContext(ctx, prompt), image, audio, chatId);
     const reply = result.resultText || (result.success ? 'Done!' : `Error: ${result.error}`);
     console.log(`[bot] Agent reply: "${reply.substring(0, 80)}"`);
+
+    if (result.checklist && result.checklist.length > 0) {
+      await replyFormatted(ctx, reply, { reply_markup: buildChecklistKeyboard(result.checklist) });
+      return;
+    }
+
     await replyFormatted(ctx, reply);
   } catch (err) {
     console.error('[bot] Chat error:', err);
