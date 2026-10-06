@@ -310,7 +310,7 @@ export const toolDefinitions: FunctionDeclaration[] = [
   {
     name: 'createCalendarEvent',
     description:
-      'Create a Google Calendar event. Use this when the user asks to schedule something or when an action item should be added to the calendar.',
+      'Create a Google Calendar event. Use this when the user asks to schedule something or when an action item should be added to the calendar. For a repeating event (e.g. "every Monday", "daily until end of month", a yearly birthday), set recurrenceRule — startDate/endDate are still just the FIRST occurrence.',
     parametersJsonSchema: {
       type: 'object' as const,
       properties: {
@@ -324,7 +324,7 @@ export const toolDefinitions: FunctionDeclaration[] = [
         },
         startDate: {
           type: 'string',
-          description: 'Start date in YYYY-MM-DD format for all-day events, or ISO 8601 datetime for timed events.',
+          description: 'Start date in YYYY-MM-DD format for all-day events, or ISO 8601 datetime for timed events. For a recurring event, this is the date/time of the first occurrence.',
         },
         endDate: {
           type: 'string',
@@ -337,6 +337,11 @@ export const toolDefinitions: FunctionDeclaration[] = [
         color: {
           type: 'string',
           description: 'Optional Google Calendar color name (e.g. "tomato", "banana", "sage") or numeric color ID (1-11).',
+        },
+        recurrenceRule: {
+          type: 'string',
+          description:
+            'Optional recurrence rule in RFC 5545 RRULE format (the "RRULE:" prefix is optional, it is added automatically). Omit entirely for a one-off event. Examples: "FREQ=DAILY" (every day, forever), "FREQ=WEEKLY;BYDAY=MO,WE,FR" (every Mon/Wed/Fri), "FREQ=WEEKLY;INTERVAL=2;BYDAY=TU" (every other Tuesday), "FREQ=MONTHLY;BYMONTHDAY=1" (1st of every month), "FREQ=YEARLY" (e.g. a birthday), "FREQ=DAILY;COUNT=10" (10 occurrences then stop), "FREQ=WEEKLY;BYDAY=FR;UNTIL=20261231T000000Z" (every Friday until a specific date, UNTIL in UTC).',
         },
       },
       required: ['summary', 'startDate', 'isAllDay'],
@@ -610,6 +615,7 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
         endDate: args.endDate as string | undefined,
         isAllDay: args.isAllDay as boolean,
         color: args.color as string | undefined,
+        recurrenceRule: args.recurrenceRule as string | undefined,
       });
       return { success: true, eventId: result.eventId, htmlLink: result.htmlLink };
     } catch (err) {

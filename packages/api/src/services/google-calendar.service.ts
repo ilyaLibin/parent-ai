@@ -118,6 +118,7 @@ export async function createCalendarEvent(params: {
   endDate?: string;
   isAllDay: boolean;
   color?: string;
+  recurrenceRule?: string;
 }) {
   const config = getConfig();
   const calendarId = config.calendar_id || 'primary';
@@ -148,6 +149,11 @@ export async function createCalendarEvent(params: {
   } else {
     event.start = { dateTime: params.startDate, timeZone };
     event.end = { dateTime: params.endDate || params.startDate, timeZone };
+  }
+
+  if (params.recurrenceRule) {
+    const rule = params.recurrenceRule.trim();
+    event.recurrence = [rule.toUpperCase().startsWith('RRULE:') ? rule : `RRULE:${rule}`];
   }
 
   const res = await calendar.events.insert({
