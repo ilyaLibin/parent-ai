@@ -23,6 +23,7 @@ import {
 import { sendTelegram, sendTelegramAudio } from '../services/telegram.service.js';
 import { createCalendarEvent as createGCalEvent, listEvents as listGCalEvents } from '../services/google-calendar.service.js';
 import { createTask as createGTask, listTasks as listGTasks, getTask as getGTask } from '../services/google-tasks.service.js';
+import { kavanuToolDefinitions, kavanuToolImplementations, type ToolContext } from './kavanu.tools.js';
 
 const FAMILY_TIMEZONE = 'Asia/Jerusalem';
 
@@ -408,9 +409,10 @@ export const toolDefinitions: FunctionDeclaration[] = [
       required: ['items'],
     },
   },
+  ...kavanuToolDefinitions,
 ];
 
-const toolImplementations: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
+const toolImplementations: Record<string, (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>> = {
   async getMessages(args) {
     const groupIds = args.groupIds as string[] | undefined;
     const hoursBack = (args.hoursBack as number) || 24;
@@ -687,15 +689,17 @@ const toolImplementations: Record<string, (args: Record<string, unknown>) => Pro
 
     return { success: true, items: created };
   },
+
+  ...kavanuToolImplementations,
 };
 
-export async function executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
+export async function executeTool(name: string, args: Record<string, unknown>, ctx: ToolContext = {}): Promise<unknown> {
   const impl = toolImplementations[name];
   if (!impl) {
     return { error: `Unknown tool: ${name}` };
   }
   try {
-    return await impl(args);
+    return await impl(args, ctx);
   } catch (err) {
     return { error: `Tool "${name}" failed: ${err instanceof Error ? err.message : String(err)}` };
   }

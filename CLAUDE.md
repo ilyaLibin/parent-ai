@@ -135,6 +135,8 @@ A single generic agent executes any task defined with a prompt in the dashboard 
 
 **Tool registry** (`tool-registry.ts`): `getMessages`, `transcribeImage`, `sendTelegram`, `sendTelegramAudio`, `listKnowledge`, `getKnowledge`, `getActionItems`, `createActionItem`, `createCalendarEvent`, `createTask`, `listTasks`
 
+**Barbershop booking** (`agents/kavanu.tools.ts` + `services/kavanu.service.ts`): `getBarberSlots`, `listBarberAppointments`, `proposeBarberBooking`, `proposeBarberCancellation`, `confirmBarberAction`, `requestKavanuLoginCode`, `submitKavanuLoginCode`. Talks to Kavanu's private customer API (the one customers.kavanu.co uses; no public API). Defaults to מספרת רונן לוי / Ronen Levi. Booking and cancelling are two-step: `confirmBarberAction` refuses a proposal created in the same agent run, so the user must reply in between. Credentials live in the `integrations` / `integration_tokens` rows of type `kavanu`. The access token lasts 2h, and the refresh token rotates on every use. The SMS login also sets an account password, which is stored for SMS-free re-login. Logging in via the Kavanu app/site resets that password, after which the bot asks for a new SMS code.
+
 **Ad-hoc agent** (`POST /agent/run`): Takes `{ prompt?, image?, audio? }`. Used by the Telegram bot for free-text chat, photos, and voice messages — every message goes through the full agent with all tools. Both `image` and `audio` (base64 + mediaType) are passed directly to Gemini as `inlineData` parts alongside the prompt/caption — Gemini transcribes/understands audio natively, no separate STT step.
 
 ### DB-driven task system

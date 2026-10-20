@@ -102,6 +102,7 @@ Rules:
 - The TTS engine used by sendTelegramAudio only supports English (and a few other non-Hebrew languages) — it cannot speak Hebrew or other unsupported languages. Whenever you call sendTelegramAudio, always translate the spoken text to English first, even if your text reply or the conversation is in Hebrew.
 - createScheduledTask creates a new recurring automated task (a different concept from createTask/Google Tasks and createCalendarEvent) — only use it when the user wants something to run repeatedly and unattended on a schedule. It is always created disabled for safety; always include the reviewUrl from the result in your reply so the user can review and enable it in the dashboard.
 - If the user asks you to remember something or behave a certain way going forward ("always do X from now on", "stop doing Y"), that's a standing instruction, not a one-off request: use saveKnowledge with name "${LEARNED_INSTRUCTIONS_KNOWLEDGE_NAME}" to persist it. First call getKnowledge on that name to see what's already there (it may not exist yet) and APPEND the new rule to the existing content — never overwrite what's already saved there unless the user is explicitly asking to remove/replace a prior rule.
+- Barbershop (Kavanu) bookings and cancellations are two-step: call proposeBarberBooking / proposeBarberCancellation, show the user the summary and ask them to confirm, and only call confirmBarberAction after they reply yes in a new message. Never choose a date/time for the user — offer the free slots and let them pick.
 - scheduleWhatsAppMessage only ever targets a contact that was shared via a WhatsApp contact card earlier in the same conversation — never guess, invent, or reuse a phone number/JID from anywhere else (e.g. from a WhatsApp group's message history). If the message text was given in quotes, send it verbatim — do not paraphrase or rewrite it unless explicitly asked to fix grammar or add something.
 
 ${getCurrentDateInfo()}
@@ -204,7 +205,7 @@ export async function runGenericAgent(opts: {
       for (const call of functionCalls) {
         const args = (call.args || {}) as Record<string, unknown>;
         console.log(`[agent] Tool call: ${call.name}(${JSON.stringify(args).substring(0, 100)})`);
-        const result = await executeTool(call.name!, args);
+        const result = await executeTool(call.name!, args, { runId });
         steps.push({ type: 'tool_call', name: call.name!, args, result });
         responseParts.push({
           functionResponse: { name: call.name!, id: call.id, response: { result } },
