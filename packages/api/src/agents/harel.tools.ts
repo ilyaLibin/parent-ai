@@ -5,6 +5,7 @@ import {
   buildHarelReport,
   depositAlerts,
   lastMonthReturn,
+  previousSnapshot,
   type HarelSnapshot,
 } from '../services/harel.service.js';
 import type { ToolContext } from './kavanu.tools.js';
@@ -46,7 +47,7 @@ export const harelToolImplementations: Record<string, (args: Record<string, unkn
     const snapshots = loadSnapshots();
     const latest = snapshots.at(-1);
     if (latest && !args.refresh && Date.now() - new Date(latest.fetchedAt).getTime() < FRESH_FOR_MS) {
-      const previous = snapshots.at(-2);
+      const previous = previousSnapshot(latest, snapshots);
       return {
         success: true,
         fetchedAt: latest.fetchedAt,
@@ -55,8 +56,8 @@ export const harelToolImplementations: Record<string, (args: Record<string, unkn
         accounts: accountDetails(latest, previous),
       };
     }
-    const previous = snapshots.at(-1);
     const { snapshot, report } = await runHarelReport();
+    const previous = previousSnapshot(snapshot, snapshots);
     return { success: true, fetchedAt: snapshot.fetchedAt, alerts: depositAlerts(snapshot), report, accounts: accountDetails(snapshot, previous) };
   },
 };

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { runHarelReport, loadSnapshots, buildHarelReport } from '../services/harel.service.js';
+import { runHarelReport, loadSnapshots, buildHarelReport, previousSnapshot } from '../services/harel.service.js';
 import { getGmailAuthUrl, isGmailConnected, getGmailAddress } from '../services/gmail.service.js';
 import { sendTelegram } from '../services/telegram.service.js';
 
@@ -27,7 +27,7 @@ harel.get('/harel/latest', (c) => {
   const snapshots = loadSnapshots();
   const latest = snapshots.at(-1);
   if (!latest) return c.json({ error: 'No snapshot yet — POST /harel/report first' }, 404);
-  return c.json({ snapshot: latest, report: buildHarelReport(latest, snapshots.at(-2)) });
+  return c.json({ snapshot: latest, report: buildHarelReport(latest, previousSnapshot(latest, snapshots)) });
 });
 
 harel.get('/gmail/auth-url', (c) => {

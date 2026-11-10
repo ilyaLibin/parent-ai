@@ -457,6 +457,15 @@ function saveSnapshot(snapshot: HarelSnapshot): void {
   writeFileSync(join(SNAPSHOT_DIR, `${name}.json`), JSON.stringify(snapshot, null, 1));
 }
 
+// What a report compares against: the newest snapshot at least ~3 weeks older, so an extra
+// on-demand check mid-month doesn't turn "since last month" into "since this morning".
+const COMPARE_MIN_AGE_MS = 20 * 86_400_000;
+
+export function previousSnapshot(snapshot: HarelSnapshot | undefined, snapshots: HarelSnapshot[]): HarelSnapshot | undefined {
+  const cutoff = new Date(snapshot?.fetchedAt ?? Date.now()).getTime() - COMPARE_MIN_AGE_MS;
+  return snapshots.filter((s) => new Date(s.fetchedAt).getTime() <= cutoff).at(-1);
+}
+
 export function loadSnapshots(): HarelSnapshot[] {
   try {
     return readdirSync(SNAPSHOT_DIR)
@@ -582,7 +591,8 @@ export function buildHarelReport(snapshot: HarelSnapshot, previous?: HarelSnapsh
 }
 
 export async function runHarelReport(getCode?: HarelCodeSource): Promise<{ snapshot: HarelSnapshot; report: string }> {
-  const previous = loadSnapshots().at(-1);
+  const snapshots = loadSnapshots();
   const snapshot = await fetchHarelSnapshot(getCode);
+  const previous = previousSnapshot(snapshot, snapshots);
   return { snapshot, report: buildHarelReport(snapshot, previous) };
 }
