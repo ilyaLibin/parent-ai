@@ -16,6 +16,10 @@ COPY packages/api ./packages/api
 # Install workspace dependencies
 RUN npm ci --workspace=packages/api --workspace=packages/shared
 
+# Headless Chromium for the Harel savings login (services/harel.service.ts)
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npx --workspace=packages/api playwright install --with-deps --only-shell chromium
+
 EXPOSE 3033
 WORKDIR /app/packages/api
 CMD ["node", "--import", "tsx", "src/index.ts"]

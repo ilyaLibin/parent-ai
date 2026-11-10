@@ -13,7 +13,8 @@
     "@parent-ai/shared": "*",
     "dotenv": "^16.4.7",
     "googleapis": "^171.4.0",
-    "hono": "^4.11.9"
+    "hono": "^4.11.9",
+    "playwright": "1.64.1"
   },
   "devDependencies": {
     "@types/node": "^22.13.1",

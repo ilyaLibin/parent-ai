@@ -24,6 +24,7 @@ import { sendTelegram, sendTelegramAudio } from '../services/telegram.service.js
 import { createCalendarEvent as createGCalEvent, listEvents as listGCalEvents } from '../services/google-calendar.service.js';
 import { createTask as createGTask, listTasks as listGTasks, getTask as getGTask } from '../services/google-tasks.service.js';
 import { kavanuToolDefinitions, kavanuToolImplementations, type ToolContext } from './kavanu.tools.js';
+import { harelToolDefinitions, harelToolImplementations } from './harel.tools.js';
 
 const FAMILY_TIMEZONE = 'Asia/Jerusalem';
 
@@ -410,6 +411,7 @@ export const toolDefinitions: FunctionDeclaration[] = [
     },
   },
   ...kavanuToolDefinitions,
+  ...harelToolDefinitions,
 ];
 
 const toolImplementations: Record<string, (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>> = {
@@ -691,6 +693,7 @@ const toolImplementations: Record<string, (args: Record<string, unknown>, ctx: T
   },
 
   ...kavanuToolImplementations,
+  ...harelToolImplementations,
 };
 
 export async function executeTool(name: string, args: Record<string, unknown>, ctx: ToolContext = {}): Promise<unknown> {

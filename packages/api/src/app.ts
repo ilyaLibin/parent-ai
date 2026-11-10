@@ -12,6 +12,7 @@ import { calendar } from './routes/calendar.routes.js';
 import { googleTasks } from './routes/google-tasks.routes.js';
 import { renovation } from './routes/renovation.routes.js';
 import { checklist } from './routes/checklist.routes.js';
+import { harel } from './routes/harel.routes.js';
 
 const app = new Hono();
 
@@ -43,5 +44,6 @@ app.route('/', calendar);
 app.route('/', googleTasks);
 app.route('/', renovation);
 app.route('/', checklist);
+app.route('/', harel);
 
 export { app };

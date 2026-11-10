@@ -5,6 +5,7 @@ import {
   exchangeCodeForTokens,
   listCalendars,
 } from '../services/google-calendar.service.js';
+import { exchangeGmailCode, GMAIL_OAUTH_STATE } from '../services/gmail.service.js';
 
 const calendar = new Hono();
 
@@ -22,7 +23,9 @@ calendar.get('/calendar/callback', async (c) => {
   if (!code) return c.json({ error: 'Missing code parameter' }, 400);
 
   try {
-    await exchangeCodeForTokens(code);
+    // Gmail (read-only) shares this OAuth client and redirect URI; `state` tells them apart.
+    if (c.req.query('state') === GMAIL_OAUTH_STATE) await exchangeGmailCode(code);
+    else await exchangeCodeForTokens(code);
     // Redirect to dashboard settings page
     const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:3000';
     return c.redirect(`${dashboardUrl}/settings?connected=true`);
