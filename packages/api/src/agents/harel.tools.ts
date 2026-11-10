@@ -1,8 +1,30 @@
 import type { FunctionDeclaration } from '@google/genai';
-import { runHarelReport, loadSnapshots, buildHarelReport, depositAlerts } from '../services/harel.service.js';
+import {
+  runHarelReport,
+  loadSnapshots,
+  buildHarelReport,
+  depositAlerts,
+  lastMonthReturn,
+  type HarelSnapshot,
+} from '../services/harel.service.js';
 import type { ToolContext } from './kavanu.tools.js';
 
 const FRESH_FOR_MS = 12 * 60 * 60 * 1000;
+
+// The report is one line per product; give the model per-account numbers for follow-ups.
+function accountDetails(snapshot: HarelSnapshot, previous?: HarelSnapshot) {
+  return snapshot.accounts.map((a) => ({
+    kind: a.kind,
+    number: a.number,
+    owner: a.owner ?? 'user',
+    employer: a.employer,
+    balance: Math.round(a.balance),
+    ytdReturnPct: a.ytdReturnPct,
+    lastMonthReturn: lastMonthReturn(a, snapshot.fetchedAt, previous),
+    ytd: a.ytd,
+    recentDeposits: a.deposits.slice(0, 3),
+  }));
+}
 
 export const harelToolDefinitions: FunctionDeclaration[] = [
   {
@@ -24,9 +46,17 @@ export const harelToolImplementations: Record<string, (args: Record<string, unkn
     const snapshots = loadSnapshots();
     const latest = snapshots.at(-1);
     if (latest && !args.refresh && Date.now() - new Date(latest.fetchedAt).getTime() < FRESH_FOR_MS) {
-      return { success: true, fetchedAt: latest.fetchedAt, alerts: depositAlerts(latest), report: buildHarelReport(latest, snapshots.at(-2)) };
+      const previous = snapshots.at(-2);
+      return {
+        success: true,
+        fetchedAt: latest.fetchedAt,
+        alerts: depositAlerts(latest),
+        report: buildHarelReport(latest, previous),
+        accounts: accountDetails(latest, previous),
+      };
     }
+    const previous = snapshots.at(-1);
     const { snapshot, report } = await runHarelReport();
-    return { success: true, fetchedAt: snapshot.fetchedAt, alerts: depositAlerts(snapshot), report };
+    return { success: true, fetchedAt: snapshot.fetchedAt, alerts: depositAlerts(snapshot), report, accounts: accountDetails(snapshot, previous) };
   },
 };

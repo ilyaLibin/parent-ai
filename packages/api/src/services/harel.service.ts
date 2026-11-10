@@ -70,6 +70,7 @@ export interface HarelAccount {
   balance: number;
   ytd: { deposits: number; transfersIn: number; withdrawals: number; transfersOut: number; gains: number; fees: number } | null;
   ytdReturnPct: number | null;
+  returnAsOf: string | null; // YYYY-MM the YTD return runs through, when Harel says
   track: string | null;
   deposits: HarelDeposit[]; // newest first
   balanceHistory?: { month: string; balance: number; ytdReturnPct: number }[];
@@ -215,7 +216,7 @@ async function runQuery(page: Page, body: string): Promise<Row[]> {
 const num = (v: string | undefined) => (v ? Number(v.replace(/[,%₪\s]/g, '')) || 0 : 0);
 const isoDate = (v: string | undefined) => (v ?? '').slice(0, 10); // "2026-06-18 00:00:00"
 function dmyToIso(v: string): string {
-  const [d, m, y] = v.split('/');
+  const [d, m, y] = v.split(/[/.]/);
   return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 function myToIso(v: string): string {
@@ -352,6 +353,7 @@ async function fetchFundAccounts(page: Page): Promise<HarelAccount[]> {
         ytd: yearlyMovements(year),
         // One row per investment track; accounts here have a single track, multi-track ones show the first.
         ytdReturnPct: tracks[0] ? num(tracks[0].TSUA) : null,
+        returnAsOf: tracks[0]?.TAARICH_TSUA ? dmyToIso(tracks[0].TAARICH_TSUA).slice(0, 7) : null, // "30.9.2026"
         track: tracks.map((t) => t.TEUR_MASLUL_HASHKAA).join(' + ') || null,
         deposits,
       });
@@ -372,6 +374,7 @@ async function fetchChildAccount(page: Page, child: ChildAccountRef): Promise<Ha
     ytd: yearlyMovements(summary),
     // The account's own return (money-weighted), not the track's — the only one this report has.
     ytdReturnPct: summary?.TSUA_ISHIT ? num(summary.TSUA_ISHIT) : null,
+    returnAsOf: null,
     track: null,
     deposits,
   };
@@ -401,6 +404,7 @@ async function fetchExecutivePolicy(page: Page, policy: string): Promise<HarelAc
     balance: num(summary?.ZVIRA),
     ytd: null,
     ytdReturnPct: summary ? num(summary.AHUZ_TSUA_CUR_YEAR) : null,
+    returnAsOf: history.at(-1)?.month ?? null,
     track: summary?.SHEMMUCAR ?? null,
     deposits,
     balanceHistory: history,
@@ -506,62 +510,74 @@ export function depositAlerts(snapshot: HarelSnapshot): DepositAlert[] {
   return alerts;
 }
 
-function accountLine(a: HarelAccount, snapshot: HarelSnapshot, prevBalance: Map<string, number>): string {
-  let line = `• ${a.number} ${esc(a.owner ?? a.employer)}: ${ils(a.balance)}`;
-  const before = prevBalance.get(a.number);
-  if (before !== undefined && Math.round(before) !== Math.round(a.balance)) line += ` (${signedIls(a.balance - before)})`;
-  if (a.ytdReturnPct !== null) line += ` · YTD ${pct(a.ytdReturnPct)}`;
-  const last = a.deposits[0];
-  if (last && (new Date(snapshot.fetchedAt).getTime() - new Date(last.valueDate).getTime()) / DAY_MS <= ACTIVE_WINDOW_DAYS) {
-    line += ` · last deposit ${ils(last.total)} on ${ddmm(last.valueDate)}`;
-  }
-  return line;
+// Compounds two YTD returns into the return of the period between them.
+const periodReturn = (ytdNow: number, ytdBefore: number) => ((1 + ytdNow / 100) / (1 + ytdBefore / 100) - 1) * 100;
+
+function previousMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
 }
 
-function yearLine(label: string, accounts: HarelAccount[]): string | null {
-  const funds = accounts.filter((a) => a.ytd);
-  if (!funds.length) return null;
-  const sum = (f: (y: NonNullable<HarelAccount['ytd']>) => number) => funds.reduce((s, a) => s + f(a.ytd!), 0);
-  return `<b>${label}</b>: gains ${signedIls(sum((y) => y.gains))} before fees, fees ${ils(sum((y) => y.fees))}, new deposits ${ils(sum((y) => y.deposits))}`;
+// Last completed month's return for an account: from Harel's monthly history when there is
+// one (bituach menahalim; its entry for the current month is month-to-date, so it's skipped),
+// otherwise by comparing this YTD figure with the previous snapshot's.
+export function lastMonthReturn(a: HarelAccount, fetchedAt: string, previous?: HarelSnapshot): { month: string; pct: number } | null {
+  const currentMonth = fetchedAt.slice(0, 7);
+  const h = a.balanceHistory?.filter((p) => p.month < currentMonth);
+  if (h && h.length >= 2) {
+    const [before, last] = h.slice(-2);
+    // Each point is the YTD return through that month; January starts a new year from zero.
+    const value = last.month.endsWith('-01') ? last.ytdReturnPct : periodReturn(last.ytdReturnPct, before.ytdReturnPct);
+    return { month: last.month, pct: value };
+  }
+  const prev = previous?.accounts.find((p) => p.number === a.number);
+  if (a.ytdReturnPct === null || !a.returnAsOf || prev?.ytdReturnPct == null || !prev.returnAsOf) return null;
+  if (prev.returnAsOf !== previousMonth(a.returnAsOf)) return null;
+  const value = a.returnAsOf.endsWith('-01') ? a.ytdReturnPct : periodReturn(a.ytdReturnPct, prev.ytdReturnPct);
+  return { month: a.returnAsOf, pct: value };
+}
+
+const monthName = (month: string) =>
+  new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(new Date(`${month}-15T00:00:00Z`));
+
+// One line per product: total, newest deposit (summed across the group's accounts on that
+// date) and last month's return weighted by balance.
+function groupLine(label: string, group: HarelAccount[], fetchedAt: string, previous?: HarelSnapshot): string {
+  const total = group.reduce((s, a) => s + a.balance, 0);
+  const parts = [`<b>${label}</b>: ${ils(total)}`];
+
+  const lastDate = group.flatMap((a) => a.deposits.map((d) => d.valueDate)).sort().at(-1);
+  if (lastDate) {
+    const amount = group.flatMap((a) => a.deposits.filter((d) => d.valueDate === lastDate)).reduce((s, d) => s + d.total, 0);
+    parts.push(`last deposit ${ddmm(lastDate)} ${ils(amount)}`);
+  }
+
+  const returns = group.map((a) => ({ a, r: lastMonthReturn(a, fetchedAt, previous) })).filter((x) => x.r);
+  if (returns.length) {
+    const weight = returns.reduce((s, x) => s + x.a.balance, 0);
+    const avg = returns.reduce((s, x) => s + x.r!.pct * x.a.balance, 0) / (weight || 1);
+    parts.push(`${monthName(returns[0].r!.month)} ${pct(avg)}`);
+  }
+  return parts.join(' · ');
 }
 
 export function buildHarelReport(snapshot: HarelSnapshot, previous?: HarelSnapshot): string {
-  const prevBalance = new Map(previous?.accounts.map((a) => [a.number, a.balance]));
   const own = snapshot.accounts.filter((a) => !a.owner);
-  const kids = snapshot.accounts.filter((a) => a.owner).sort((a, b) => b.balance - a.balance);
-  const sumOf = (list: HarelAccount[]) => list.reduce((s, a) => s + a.balance, 0);
-  const lines: string[] = [];
+  const kids = snapshot.accounts.filter((a) => a.owner);
 
-  let header = `<b>Harel savings — ${familyDate(new Date(snapshot.fetchedAt))}</b>\nTotal: <b>${ils(snapshot.total)}</b>`;
+  let header = `<b>Harel — ${familyDate(new Date(snapshot.fetchedAt))}</b>\nTotal ${ils(snapshot.total)}`;
   if (previous) header += ` (${signedIls(snapshot.total - previous.total)} since ${familyDate(new Date(previous.fetchedAt))})`;
-  if (kids.length) header += `\nYours ${ils(sumOf(own))} · kids ${ils(sumOf(kids))}`;
-  lines.push(header);
+  const lines = [header, ''];
+
+  for (const kind of ['executive', 'hishtalmut', 'gemel', 'gemel_invest'] as AccountKind[]) {
+    const group = own.filter((a) => a.kind === kind);
+    if (group.length) lines.push(groupLine(KIND_LABELS[kind], group, snapshot.fetchedAt, previous));
+  }
+  if (kids.length) lines.push(groupLine(`Kids (${[...new Set(kids.map((a) => a.owner))].join(', ')})`, kids, snapshot.fetchedAt, previous));
 
   const alerts = depositAlerts(snapshot);
   lines.push('');
-  lines.push(alerts.length ? `⚠️ <b>Deposits to check</b>\n${alerts.map((a) => `• ${esc(a.message)}`).join('\n')}` : '✅ All regular deposits arrived on time.');
-
-  for (const kind of ['executive', 'hishtalmut', 'gemel', 'gemel_invest'] as AccountKind[]) {
-    const group = own.filter((a) => a.kind === kind).sort((a, b) => b.balance - a.balance);
-    if (!group.length) continue;
-    lines.push('');
-    lines.push(`<b>${KIND_LABELS[kind]}</b> — ${ils(sumOf(group))}`);
-    for (const a of group) lines.push(accountLine(a, snapshot, prevBalance));
-  }
-  if (kids.length) {
-    lines.push('');
-    lines.push(`<b>Kids</b> — ${ils(sumOf(kids))}`);
-    for (const a of kids) lines.push(`${accountLine(a, snapshot, prevBalance)} (${KIND_LABELS[a.kind]})`);
-  }
-
-  const summaries = [yearLine('This year, your funds (excl. ביטוח מנהלים)', own), yearLine('This year, kids', kids)].filter(Boolean);
-  if (summaries.length) lines.push('', ...(summaries as string[]));
-  for (const a of own.filter((x) => x.balanceHistory?.length)) {
-    const yearAgo = a.balanceHistory![0];
-    lines.push(`<b>${KIND_LABELS[a.kind]}</b>: ${ils(yearAgo.balance)} in ${yearAgo.month} → ${ils(a.balance)} now`);
-  }
-  lines.push('');
-  lines.push("<i>YTD = this year's return of the investment track, before management fees (kids: the account's own return).</i>");
+  lines.push(alerts.length ? `⚠️ ${alerts.map((a) => esc(a.message)).join('\n⚠️ ')}` : '✅ Deposits on time');
   return lines.join('\n');
 }
 
