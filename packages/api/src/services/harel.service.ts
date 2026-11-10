@@ -582,7 +582,9 @@ export function buildHarelReport(snapshot: HarelSnapshot, previous?: HarelSnapsh
     const group = own.filter((a) => a.kind === kind);
     if (group.length) lines.push(groupLine(KIND_LABELS[kind], group, snapshot.fetchedAt, previous));
   }
-  if (kids.length) lines.push(groupLine(`Kids (${[...new Set(kids.map((a) => a.owner))].join(', ')})`, kids, snapshot.fetchedAt, previous));
+  for (const owner of new Set(kids.map((a) => a.owner!))) {
+    lines.push(groupLine(owner, kids.filter((a) => a.owner === owner), snapshot.fetchedAt, previous));
+  }
 
   const alerts = depositAlerts(snapshot);
   lines.push('');
