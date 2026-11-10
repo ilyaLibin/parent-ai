@@ -65,6 +65,7 @@ export interface HarelDeposit {
 export interface HarelAccount {
   kind: AccountKind;
   number: string;
+  owner?: string; // child's first name for accounts the user manages as guardian; unset = the user's own
   employer: string;
   balance: number;
   ytd: { deposits: number; transfersIn: number; withdrawals: number; transfersOut: number; gains: number; fees: number } | null;
@@ -102,6 +103,7 @@ const FUND_LOBBY = { key: 884, rid: '1EE0BBCB-28E3-47CB-96BE-1446D26A8299' };
 const FUND_ACCOUNT = { key: 2, rid: '4D0CB82A-6C1F-4168-9B1D-52905745DF79' };
 const FUND_DEPOSITS = { key: 286, rid: '474F6A98-41C0-45E1-8C09-FE3C18D1B9DF' };
 const EXEC_POLICY = { key: 483, rid: '25390ED0-182F-43E2-B304-8D1BA5389F08' };
+const CHILD_ACCOUNT = { key: 218, rid: 'E5413411-BAB6-490C-B82B-CA24A7D67CE7' };
 const TOFES = [['Tofes_Name', 'DF42_menifadirectdebitgemel'], ['Tofes_Name_2', 'StandingOrder_Gemel']] as [string, string][];
 
 function lobbyQuery(kupa: number): string {
@@ -153,6 +155,20 @@ function executiveQuery(d: 5 | 13 | 19, policy: string): string {
     ['Vector_Type_Tsuaa', 1],
     ['Koteret', 'פוליסת ביטוח חיים עם חסכון שלי'],
     ['_REPORTID', EXEC_POLICY.rid],
+  ]);
+}
+
+// Accounts held for a child (the user is the guardian). D=2: balance, personal YTD return and
+// yearly movements in one row. D=4: recent deposits.
+function childAccountQuery(d: 2 | 4, account: string, childId: string, kupa: number): string {
+  return query(CHILD_ACCOUNT.key, CHILD_ACCOUNT.rid, d, [
+    ['policySubjectId', account],
+    ['XMLFILTERS', filters([['Mispar_heshbon', 'number', account], ['kod_sug_Kupa_Otzar', 'number', kupa]])],
+    ['HCUN', -999],
+    ['_REPORTID', CHILD_ACCOUNT.rid],
+    ['kod_sug_Kupa_Otzar', kupa],
+    ['SUG_KEREN', 21],
+    ['ChildId', childId],
   ]);
 }
 
@@ -215,7 +231,27 @@ export type HarelCodeSource = (sentAtMs: number) => Promise<string>;
 const codeFromGmail: HarelCodeSource = (sentAtMs) =>
   waitForEmailCode({ from: OTP_SENDER, sinceMs: sentAtMs, codePattern: /\b(\d{6})\b/ });
 
-async function login(page: Page, config: HarelConfig, getCode: HarelCodeSource): Promise<string[]> {
+interface ChildAccountRef {
+  childId: string;
+  name: string;
+  account: string;
+  kupa: number;
+}
+
+interface CustomerProducts {
+  topicsList?: Record<string, { url: string; policySubjectId: string | null }[]>;
+  // Accounts the user manages for others (here: their kids), keyed by the account holder's ID.
+  mursheList?: Record<string, { userId: number; policyNumber: number; firstName: string; xtopicId: number }[]>;
+}
+
+// xtopicId (product sub-type in customer-products) → kod_sug_Kupa_Otzar for the report queries.
+const XTOPIC_TO_KUPA: Record<number, number> = { 63: 4 }; // גמל להשקעה
+
+async function login(
+  page: Page,
+  config: HarelConfig,
+  getCode: HarelCodeSource,
+): Promise<{ executivePolicies: string[]; children: ChildAccountRef[] }> {
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
   await page.fill('#uid', config.userId);
   await page.fill('#phone', config.phone);
@@ -235,11 +271,11 @@ async function login(page: Page, config: HarelConfig, getCode: HarelCodeSource):
   const code = await getCode(sentAt);
   await page.fill('#otp', code);
 
-  // The landing page lists the customer's products; bituach menahalim policies are only
-  // discoverable from there (the fund lobbies cover gemel/hishtalmut).
+  // The landing page lists the customer's products; bituach menahalim policies and the kids'
+  // accounts are only discoverable from there (the fund lobbies cover the user's own gemel/hishtalmut).
   const productsJson = page
     .waitForResponse((r) => r.url().includes('/client-view/customer-products'), { timeout: 60_000 })
-    .then((r) => r.json() as Promise<{ topicsList?: Record<string, { url: string; policySubjectId: string | null }[]> }>);
+    .then((r) => r.json() as Promise<CustomerProducts>);
   productsJson.catch(() => {}); // awaited below; don't let it go unhandled if we bail out first
 
   // A good code navigates straight to the personal area, so the SCValidateOTP response
@@ -252,13 +288,52 @@ async function login(page: Page, config: HarelConfig, getCode: HarelCodeSource):
   }
 
   const products = await productsJson;
-  return Object.values(products.topicsList ?? {})
+  const executivePolicies = Object.values(products.topicsList ?? {})
     .flat()
     .filter((t) => t.url.includes('/executives/') && t.policySubjectId)
     .map((t) => t.policySubjectId!);
+  const children: ChildAccountRef[] = [];
+  for (const [childId, entries] of Object.entries(products.mursheList ?? {})) {
+    for (const e of entries) {
+      const kupa = XTOPIC_TO_KUPA[e.xtopicId];
+      if (kupa === undefined) {
+        console.warn(`[harel] skipping ${e.firstName}'s account ${e.policyNumber}: unknown product type ${e.xtopicId}`);
+        continue;
+      }
+      children.push({ childId, name: e.firstName, account: String(e.policyNumber), kupa });
+    }
+  }
+  return { executivePolicies, children };
 }
 
 // ---------- fetch ----------
+
+// Provident-fund deposit rows (own and kids' accounts share these columns).
+function fundDeposits(rows: Row[]): HarelDeposit[] {
+  return rows
+    .map((d) => ({
+      valueDate: isoDate(d.TAARICH_ERECH),
+      salaryMonth: isoDate(d.TAARICH_TOKEF).slice(0, 7),
+      employer: d.SHEM_MAAVID_MESHALEM,
+      employee: num(d.TOTAL_HAFKADOT_OVED),
+      employerPart: num(d.TOTAL_HAFKADOT_MAAVID),
+      severance: num(d.TOTAL_HAFKADOT_PITZUIM),
+      total: num(d.TOTAL_HAFKADOT),
+    }))
+    .sort((a, b) => b.valueDate.localeCompare(a.valueDate));
+}
+
+function yearlyMovements(row: Row | undefined): HarelAccount['ytd'] {
+  if (!row) return null;
+  return {
+    deposits: num(row.SAX_HAFKADOT_SHANA),
+    transfersIn: num(row.SAX_HAAVAROT_MEKRANOT_SHANA),
+    withdrawals: num(row.SAX_MESHIHOT_SHANA),
+    transfersOut: num(row.SAX_HAAVAROT_LEKRANOT_SHANA),
+    gains: num(row.SAX_REVAHIM_SHANA),
+    fees: num(row.SAX_DMEI_NIHUL_SHANA),
+  };
+}
 
 async function fetchFundAccounts(page: Page): Promise<HarelAccount[]> {
   const accounts: HarelAccount[] = [];
@@ -267,33 +342,14 @@ async function fetchFundAccounts(page: Page): Promise<HarelAccount[]> {
       const number = row.Mispar_heshbon;
       const [year] = await runQuery(page, accountQuery(10, number, code));
       const tracks = await runQuery(page, accountQuery(13, number, code));
-      const deposits = (await runQuery(page, depositsQuery(number, code)))
-        .map((d) => ({
-          valueDate: isoDate(d.TAARICH_ERECH),
-          salaryMonth: isoDate(d.TAARICH_TOKEF).slice(0, 7),
-          employer: d.SHEM_MAAVID_MESHALEM,
-          employee: num(d.TOTAL_HAFKADOT_OVED),
-          employerPart: num(d.TOTAL_HAFKADOT_MAAVID),
-          severance: num(d.TOTAL_HAFKADOT_PITZUIM),
-          total: num(d.TOTAL_HAFKADOT),
-        }))
-        .sort((a, b) => b.valueDate.localeCompare(a.valueDate));
+      const deposits = fundDeposits(await runQuery(page, depositsQuery(number, code)));
 
       accounts.push({
         kind,
         number,
         employer: row.SHEM_MIFAL,
         balance: num(year?.ITRA_SGIRA ?? row.ITRA_SGIRA),
-        ytd: year
-          ? {
-              deposits: num(year.SAX_HAFKADOT_SHANA),
-              transfersIn: num(year.SAX_HAAVAROT_MEKRANOT_SHANA),
-              withdrawals: num(year.SAX_MESHIHOT_SHANA),
-              transfersOut: num(year.SAX_HAAVAROT_LEKRANOT_SHANA),
-              gains: num(year.SAX_REVAHIM_SHANA),
-              fees: num(year.SAX_DMEI_NIHUL_SHANA),
-            }
-          : null,
+        ytd: yearlyMovements(year),
         // One row per investment track; accounts here have a single track, multi-track ones show the first.
         ytdReturnPct: tracks[0] ? num(tracks[0].TSUA) : null,
         track: tracks.map((t) => t.TEUR_MASLUL_HASHKAA).join(' + ') || null,
@@ -302,6 +358,23 @@ async function fetchFundAccounts(page: Page): Promise<HarelAccount[]> {
     }
   }
   return accounts;
+}
+
+async function fetchChildAccount(page: Page, child: ChildAccountRef): Promise<HarelAccount> {
+  const [summary] = await runQuery(page, childAccountQuery(2, child.account, child.childId, child.kupa));
+  const deposits = fundDeposits(await runQuery(page, childAccountQuery(4, child.account, child.childId, child.kupa)));
+  return {
+    kind: KUPA_TYPES.find((k) => k.code === child.kupa)?.kind ?? 'gemel_invest',
+    number: child.account,
+    owner: child.name,
+    employer: summary?.SHEM_MIFAL ?? '',
+    balance: num(summary?.ITRA_SGIRA),
+    ytd: yearlyMovements(summary),
+    // The account's own return (money-weighted), not the track's — the only one this report has.
+    ytdReturnPct: summary?.TSUA_ISHIT ? num(summary.TSUA_ISHIT) : null,
+    track: null,
+    deposits,
+  };
 }
 
 async function fetchExecutivePolicy(page: Page, policy: string): Promise<HarelAccount> {
@@ -345,10 +418,11 @@ export function fetchHarelSnapshot(getCode: HarelCodeSource = codeFromGmail): Pr
     const page = await context.newPage();
     page.setDefaultTimeout(45_000);
     try {
-      const executivePolicies = await login(page, config, getCode);
+      const { executivePolicies, children } = await login(page, config, getCode);
       const accounts = [
         ...(await Promise.all(executivePolicies.map((p) => fetchExecutivePolicy(page, p)))),
         ...(await fetchFundAccounts(page)),
+        ...(await Promise.all(children.map((c) => fetchChildAccount(page, c)))),
       ];
       const snapshot: HarelSnapshot = {
         fetchedAt: new Date().toISOString(),
@@ -421,7 +495,7 @@ export function depositAlerts(snapshot: HarelSnapshot): DepositAlert[] {
     if (!last) continue;
     const age = Math.floor((now - new Date(last.valueDate).getTime()) / DAY_MS);
     if (age > ACTIVE_WINDOW_DAYS) continue;
-    const label = `${KIND_LABELS[a.kind]} ${a.number} (${a.employer})`;
+    const label = `${KIND_LABELS[a.kind]} ${a.number} (${a.owner ?? a.employer})`;
     if (age > LATE_AFTER_DAYS) {
       alerts.push({ account: a.number, message: `${label}: no deposit for ${age} days — last was ${ils(last.total)} on ${ddmm(last.valueDate)}` });
     }
@@ -432,13 +506,35 @@ export function depositAlerts(snapshot: HarelSnapshot): DepositAlert[] {
   return alerts;
 }
 
+function accountLine(a: HarelAccount, snapshot: HarelSnapshot, prevBalance: Map<string, number>): string {
+  let line = `• ${a.number} ${esc(a.owner ?? a.employer)}: ${ils(a.balance)}`;
+  const before = prevBalance.get(a.number);
+  if (before !== undefined && Math.round(before) !== Math.round(a.balance)) line += ` (${signedIls(a.balance - before)})`;
+  if (a.ytdReturnPct !== null) line += ` · YTD ${pct(a.ytdReturnPct)}`;
+  const last = a.deposits[0];
+  if (last && (new Date(snapshot.fetchedAt).getTime() - new Date(last.valueDate).getTime()) / DAY_MS <= ACTIVE_WINDOW_DAYS) {
+    line += ` · last deposit ${ils(last.total)} on ${ddmm(last.valueDate)}`;
+  }
+  return line;
+}
+
+function yearLine(label: string, accounts: HarelAccount[]): string | null {
+  const funds = accounts.filter((a) => a.ytd);
+  if (!funds.length) return null;
+  const sum = (f: (y: NonNullable<HarelAccount['ytd']>) => number) => funds.reduce((s, a) => s + f(a.ytd!), 0);
+  return `<b>${label}</b>: gains ${signedIls(sum((y) => y.gains))} before fees, fees ${ils(sum((y) => y.fees))}, new deposits ${ils(sum((y) => y.deposits))}`;
+}
+
 export function buildHarelReport(snapshot: HarelSnapshot, previous?: HarelSnapshot): string {
   const prevBalance = new Map(previous?.accounts.map((a) => [a.number, a.balance]));
+  const own = snapshot.accounts.filter((a) => !a.owner);
+  const kids = snapshot.accounts.filter((a) => a.owner).sort((a, b) => b.balance - a.balance);
+  const sumOf = (list: HarelAccount[]) => list.reduce((s, a) => s + a.balance, 0);
   const lines: string[] = [];
-  const asOf = new Date(snapshot.fetchedAt);
 
-  let header = `<b>Harel savings — ${familyDate(asOf)}</b>\nTotal: <b>${ils(snapshot.total)}</b>`;
+  let header = `<b>Harel savings — ${familyDate(new Date(snapshot.fetchedAt))}</b>\nTotal: <b>${ils(snapshot.total)}</b>`;
   if (previous) header += ` (${signedIls(snapshot.total - previous.total)} since ${familyDate(new Date(previous.fetchedAt))})`;
+  if (kids.length) header += `\nYours ${ils(sumOf(own))} · kids ${ils(sumOf(kids))}`;
   lines.push(header);
 
   const alerts = depositAlerts(snapshot);
@@ -446,39 +542,26 @@ export function buildHarelReport(snapshot: HarelSnapshot, previous?: HarelSnapsh
   lines.push(alerts.length ? `⚠️ <b>Deposits to check</b>\n${alerts.map((a) => `• ${esc(a.message)}`).join('\n')}` : '✅ All regular deposits arrived on time.');
 
   for (const kind of ['executive', 'hishtalmut', 'gemel', 'gemel_invest'] as AccountKind[]) {
-    const group = snapshot.accounts.filter((a) => a.kind === kind).sort((a, b) => b.balance - a.balance);
+    const group = own.filter((a) => a.kind === kind).sort((a, b) => b.balance - a.balance);
     if (!group.length) continue;
-    const sum = group.reduce((s, a) => s + a.balance, 0);
     lines.push('');
-    lines.push(`<b>${KIND_LABELS[kind]}</b> — ${ils(sum)}`);
-    for (const a of group) {
-      let line = `• ${a.number} ${esc(a.employer)}: ${ils(a.balance)}`;
-      const before = prevBalance.get(a.number);
-      if (before !== undefined && Math.round(before) !== Math.round(a.balance)) line += ` (${signedIls(a.balance - before)})`;
-      if (a.ytdReturnPct !== null) line += ` · YTD ${pct(a.ytdReturnPct)}`;
-      const last = a.deposits[0];
-      if (last && (new Date(snapshot.fetchedAt).getTime() - new Date(last.valueDate).getTime()) / DAY_MS <= ACTIVE_WINDOW_DAYS) {
-        line += ` · last deposit ${ils(last.total)} on ${ddmm(last.valueDate)}`;
-      }
-      lines.push(line);
-    }
+    lines.push(`<b>${KIND_LABELS[kind]}</b> — ${ils(sumOf(group))}`);
+    for (const a of group) lines.push(accountLine(a, snapshot, prevBalance));
+  }
+  if (kids.length) {
+    lines.push('');
+    lines.push(`<b>Kids</b> — ${ils(sumOf(kids))}`);
+    for (const a of kids) lines.push(`${accountLine(a, snapshot, prevBalance)} (${KIND_LABELS[a.kind]})`);
   }
 
-  const funds = snapshot.accounts.filter((a) => a.ytd);
-  if (funds.length) {
-    const gains = funds.reduce((s, a) => s + a.ytd!.gains, 0);
-    const fees = funds.reduce((s, a) => s + a.ytd!.fees, 0);
-    const deposits = funds.reduce((s, a) => s + a.ytd!.deposits, 0);
-    lines.push('');
-    lines.push(`<b>This year (hishtalmut + gemel)</b>: gains ${signedIls(gains)} before fees, fees ${ils(fees)}, new deposits ${ils(deposits)}`);
-  }
-  for (const a of snapshot.accounts.filter((x) => x.balanceHistory?.length)) {
-    const h = a.balanceHistory!;
-    const yearAgo = h[0];
+  const summaries = [yearLine('This year, your funds (excl. ביטוח מנהלים)', own), yearLine('This year, kids', kids)].filter(Boolean);
+  if (summaries.length) lines.push('', ...(summaries as string[]));
+  for (const a of own.filter((x) => x.balanceHistory?.length)) {
+    const yearAgo = a.balanceHistory![0];
     lines.push(`<b>${KIND_LABELS[a.kind]}</b>: ${ils(yearAgo.balance)} in ${yearAgo.month} → ${ils(a.balance)} now`);
   }
   lines.push('');
-  lines.push('<i>Returns are year-to-date for the investment track, before management fees.</i>');
+  lines.push("<i>YTD = this year's return of the investment track, before management fees (kids: the account's own return).</i>");
   return lines.join('\n');
 }
 
