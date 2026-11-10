@@ -16,7 +16,7 @@ harel.post('/harel/report', async (c) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (body.send !== false) {
-      await sendTelegram(`⚠️ Harel savings check failed: ${message}`, 'HTML').catch(() => {});
+      await sendTelegram(`⚠️ בדיקת החסכונות בהראל נכשלה: ${message}`, 'HTML').catch(() => {});
     }
     return c.json({ success: false, error: message }, 500);
   }

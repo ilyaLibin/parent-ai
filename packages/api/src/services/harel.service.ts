@@ -485,14 +485,17 @@ const ACTIVE_WINDOW_DAYS = 75;
 // ...and is flagged when the newest deposit is older than this (they usually land by the 10th).
 const LATE_AFTER_DAYS = 38;
 
-const ils = (n: number) => `₪${Math.round(n).toLocaleString('en-US')}`;
-const signedIls = (n: number) => `${n >= 0 ? '+' : '−'}${ils(Math.abs(n))}`;
-const pct = (n: number | null) => (n === null ? '' : `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`);
+// The report is all Hebrew (right-to-left). Signed numbers get a left-to-right mark so the
+// +/− and % stay where they belong instead of being flipped by the bidi algorithm.
+const LRM = '\u200E';
+const ils = (n: number) => `${Math.round(n).toLocaleString('en-US')} ₪`;
+const signedIls = (n: number) => `${LRM}${n >= 0 ? '+' : '-'}${ils(Math.abs(n))}`;
+const pct = (n: number | null) => (n === null ? '' : `${LRM}${n >= 0 ? '+' : ''}${n.toFixed(2)}%`);
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 function familyDate(d: Date): string {
-  return new Intl.DateTimeFormat('en-GB', { timeZone: FAMILY_TIMEZONE, day: 'numeric', month: 'short', year: 'numeric' }).format(d);
+  return new Intl.DateTimeFormat('he-IL', { timeZone: FAMILY_TIMEZONE, day: 'numeric', month: 'long', year: 'numeric' }).format(d);
 }
 
 export interface DepositAlert {
@@ -510,10 +513,10 @@ export function depositAlerts(snapshot: HarelSnapshot): DepositAlert[] {
     if (age > ACTIVE_WINDOW_DAYS) continue;
     const label = `${KIND_LABELS[a.kind]} ${a.number} (${a.owner ?? a.employer})`;
     if (age > LATE_AFTER_DAYS) {
-      alerts.push({ account: a.number, message: `${label}: no deposit for ${age} days — last was ${ils(last.total)} on ${ddmm(last.valueDate)}` });
+      alerts.push({ account: a.number, message: `${label}: אין הפקדה כבר ${age} ימים, האחרונה ${ils(last.total)} ב-${ddmm(last.valueDate)}` });
     }
     if (prev && prev.employer === last.employer && Math.abs(last.total - prev.total) > Math.max(1, prev.total * 0.03)) {
-      alerts.push({ account: a.number, message: `${label}: deposit changed ${ils(prev.total)} → ${ils(last.total)} (${ddmm(last.valueDate)})` });
+      alerts.push({ account: a.number, message: `${label}: ההפקדה השתנתה מ-${ils(prev.total)} ל-${ils(last.total)} (${ddmm(last.valueDate)})` });
     }
   }
   return alerts;
@@ -547,7 +550,7 @@ export function lastMonthReturn(a: HarelAccount, fetchedAt: string, previous?: H
 }
 
 const monthName = (month: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(new Date(`${month}-15T00:00:00Z`));
+  new Intl.DateTimeFormat('he-IL', { month: 'long', timeZone: 'UTC' }).format(new Date(`${month}-15T00:00:00Z`));
 
 // One line per product: total, newest deposit (summed across the group's accounts on that
 // date) and last month's return weighted by balance.
@@ -558,14 +561,14 @@ function groupLine(label: string, group: HarelAccount[], fetchedAt: string, prev
   const lastDate = group.flatMap((a) => a.deposits.map((d) => d.valueDate)).sort().at(-1);
   if (lastDate) {
     const amount = group.flatMap((a) => a.deposits.filter((d) => d.valueDate === lastDate)).reduce((s, d) => s + d.total, 0);
-    parts.push(`last deposit ${ddmm(lastDate)} ${ils(amount)}`);
+    parts.push(`הפקדה אחרונה ${ddmm(lastDate)} ${ils(amount)}`);
   }
 
   const returns = group.map((a) => ({ a, r: lastMonthReturn(a, fetchedAt, previous) })).filter((x) => x.r);
   if (returns.length) {
     const weight = returns.reduce((s, x) => s + x.a.balance, 0);
     const avg = returns.reduce((s, x) => s + x.r!.pct * x.a.balance, 0) / (weight || 1);
-    parts.push(`${monthName(returns[0].r!.month)} ${pct(avg)}`);
+    parts.push(`תשואה ב${monthName(returns[0].r!.month)} ${pct(avg)}`);
   }
   return parts.join(' · ');
 }
@@ -574,8 +577,8 @@ export function buildHarelReport(snapshot: HarelSnapshot, previous?: HarelSnapsh
   const own = snapshot.accounts.filter((a) => !a.owner);
   const kids = snapshot.accounts.filter((a) => a.owner);
 
-  let header = `<b>Harel — ${familyDate(new Date(snapshot.fetchedAt))}</b>\nTotal ${ils(snapshot.total)}`;
-  if (previous) header += ` (${signedIls(snapshot.total - previous.total)} since ${familyDate(new Date(previous.fetchedAt))})`;
+  let header = `<b>הראל — ${familyDate(new Date(snapshot.fetchedAt))}</b>\nסה״כ ${ils(snapshot.total)}`;
+  if (previous) header += ` (${signedIls(snapshot.total - previous.total)} מאז ${familyDate(new Date(previous.fetchedAt))})`;
   const lines = [header, ''];
 
   for (const kind of ['executive', 'hishtalmut', 'gemel', 'gemel_invest'] as AccountKind[]) {
@@ -588,7 +591,7 @@ export function buildHarelReport(snapshot: HarelSnapshot, previous?: HarelSnapsh
 
   const alerts = depositAlerts(snapshot);
   lines.push('');
-  lines.push(alerts.length ? `⚠️ ${alerts.map((a) => esc(a.message)).join('\n⚠️ ')}` : '✅ Deposits on time');
+  lines.push(alerts.length ? `⚠️ ${alerts.map((a) => esc(a.message)).join('\n⚠️ ')}` : '✅ כל ההפקדות הגיעו בזמן');
   return lines.join('\n');
 }
 
