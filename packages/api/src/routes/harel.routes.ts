@@ -1,5 +1,12 @@
 import { Hono } from 'hono';
-import { runHarelReport, loadSnapshots, buildHarelReport, previousSnapshot } from '../services/harel.service.js';
+import {
+  runHarelReport,
+  loadSnapshots,
+  buildHarelReport,
+  previousSnapshot,
+  getHarelSessionStatus,
+  keepHarelSessionAlive,
+} from '../services/harel.service.js';
 import { getGmailAuthUrl, isGmailConnected, getGmailAddress } from '../services/gmail.service.js';
 import { sendTelegram } from '../services/telegram.service.js';
 
@@ -29,6 +36,10 @@ harel.get('/harel/latest', (c) => {
   if (!latest) return c.json({ error: 'No snapshot yet — POST /harel/report first' }, 404);
   return c.json({ snapshot: latest, report: buildHarelReport(latest, previousSnapshot(latest, snapshots)) });
 });
+
+// Saved Harel session: when it was created and last confirmed alive. POST checks it now.
+harel.get('/harel/session', (c) => c.json(getHarelSessionStatus()));
+harel.post('/harel/session/check', async (c) => c.json({ alive: await keepHarelSessionAlive(), ...getHarelSessionStatus() }));
 
 harel.get('/gmail/auth-url', (c) => {
   try {

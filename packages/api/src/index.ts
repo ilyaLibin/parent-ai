@@ -14,6 +14,9 @@ async function main() {
   serve({ fetch: app.fetch, port: PORT }, () => {
     console.log(`API server running on http://localhost:${PORT}`);
   });
+
+  const { startHarelKeepAlive } = await import('./services/harel.service.js');
+  startHarelKeepAlive();
 }
 
 main();

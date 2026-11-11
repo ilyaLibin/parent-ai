@@ -1,6 +1,6 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { chromium, type Page } from 'playwright';
+import { chromium, request, type BrowserContext, type Page } from 'playwright';
 import { getIntegration } from '@parent-ai/shared';
 import { waitForEmailCode } from './gmail.service.js';
 
@@ -10,15 +10,23 @@ import { waitForEmailCode } from './gmail.service.js';
 // that only answers inside a logged-in browser session, and the site sits behind F5 bot
 // protection. So we log in with headless Chromium (ID + phone, one-time code by email,
 // read from Gmail) and run the same queries from inside the page.
+//
+// Harel has no access/refresh tokens — a login just leaves session cookies (SharePoint
+// FedAuth etc.). We save them after every run and reuse them until Harel rejects them, so
+// back-to-back checks don't each cost a login code, and a keep-alive keeps the session warm.
 const LOGIN_URL =
   'https://www.harel-group.co.il/Pages/login-page/Login.aspx?LoginOriginatingAction=PersonalInfoPage&isshowlogin=true&Source=%2fpersonal-info&Type=PortalOTP';
 const REPORT_URL =
   'https://www.harel-group.co.il/_layouts/15/HarelWebSite/HarelReports/ApplicationPages/HTTP_Proxy_Script.aspx?Action=ExecSQL';
+const CLIENT_VIEW_URL = 'https://www.harel-group.co.il/personal-info/my-harel/Pages/client-view.aspx';
 const OTP_SENDER = 'DoNotReply@harel-ins.co.il';
 const INTEGRATION_TYPE = 'harel';
 const FAMILY_TIMEZONE = 'Asia/Jerusalem';
 
 const SNAPSHOT_DIR = join(dirname(process.env.DB_PATH || './data/messages.db'), 'harel');
+// Playwright storageState (the session cookies) and when that session was created/last seen alive.
+const SESSION_FILE = join(SNAPSHOT_DIR, 'session.json');
+const SESSION_META_FILE = join(SNAPSHOT_DIR, 'session-meta.json');
 
 interface HarelConfig {
   userId: string; // ת.ז.
@@ -248,11 +256,26 @@ interface CustomerProducts {
 // xtopicId (product sub-type in customer-products) → kod_sug_Kupa_Otzar for the report queries.
 const XTOPIC_TO_KUPA: Record<number, number> = { 63: 4 }; // גמל להשקעה
 
-async function login(
-  page: Page,
-  config: HarelConfig,
-  getCode: HarelCodeSource,
-): Promise<{ executivePolicies: string[]; children: ChildAccountRef[] }> {
+// The landing page lists the customer's products; bituach menahalim policies and the kids'
+// accounts are only discoverable from there (the fund lobbies cover the user's own gemel/hishtalmut).
+function waitForProducts(page: Page, timeout: number): Promise<CustomerProducts> {
+  const products = page
+    .waitForResponse((r) => r.url().includes('/client-view/customer-products'), { timeout })
+    .then((r) => r.json() as Promise<CustomerProducts>);
+  products.catch(() => {}); // awaited by the caller; don't let it go unhandled if we bail out first
+  return products;
+}
+
+// Opens the personal area with whatever session the context already has. Throws if Harel
+// sends us back to the login page (or the landing page doesn't load the customer's products).
+async function openWithSavedSession(page: Page): Promise<CustomerProducts> {
+  const products = waitForProducts(page, 30_000);
+  await page.goto(CLIENT_VIEW_URL, { waitUntil: 'domcontentloaded' });
+  if (!page.url().includes('/personal-info/')) throw new Error(`session expired (redirected to ${page.url()})`);
+  return products;
+}
+
+async function login(page: Page, config: HarelConfig, getCode: HarelCodeSource): Promise<CustomerProducts> {
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded' });
   await page.fill('#uid', config.userId);
   await page.fill('#phone', config.phone);
@@ -265,6 +288,9 @@ async function login(
   ]);
   const start = (await startRes.json()) as { Status: number; Details?: { ProcessSuccess?: string; UserInputError?: string } };
   if (start.Details?.ProcessSuccess !== 'OTPWasSent') {
+    if (JSON.stringify(start).includes('UserIsBlocked')) {
+      throw new Error('הראל חסמו זמנית כניסה לחשבון (יותר מדי ניסיונות כניסה). לנסות שוב מאוחר יותר, ואם זה נמשך — לפנות לשירות הלקוחות של הראל.');
+    }
     throw new Error(`Harel didn't send a login code: ${JSON.stringify(start.Details ?? start)}`);
   }
 
@@ -272,12 +298,7 @@ async function login(
   const code = await getCode(sentAt);
   await page.fill('#otp', code);
 
-  // The landing page lists the customer's products; bituach menahalim policies and the kids'
-  // accounts are only discoverable from there (the fund lobbies cover the user's own gemel/hishtalmut).
-  const productsJson = page
-    .waitForResponse((r) => r.url().includes('/client-view/customer-products'), { timeout: 60_000 })
-    .then((r) => r.json() as Promise<CustomerProducts>);
-  productsJson.catch(() => {}); // awaited below; don't let it go unhandled if we bail out first
+  const products = waitForProducts(page, 60_000);
 
   // A good code navigates straight to the personal area, so the SCValidateOTP response
   // body is gone by then — success is "we left the login page"; a bad code stays put.
@@ -288,7 +309,27 @@ async function login(
     throw new Error('Harel did not accept the login code (still on the login page)');
   }
 
-  const products = await productsJson;
+  return products;
+}
+
+// Reuses the saved session when Harel still accepts it; otherwise logs in with a new code.
+async function openPersonalArea(page: Page, config: HarelConfig, getCode: HarelCodeSource): Promise<CustomerProducts> {
+  if (existsSync(SESSION_FILE)) {
+    try {
+      const products = await openWithSavedSession(page);
+      console.log('[harel] reused saved session');
+      return products;
+    } catch (err) {
+      noteSessionExpired(err instanceof Error ? err.message : String(err));
+    }
+  }
+  const products = await login(page, config, getCode);
+  writeSessionMeta({ loggedInAt: new Date().toISOString(), lastAliveAt: new Date().toISOString() });
+  console.log('[harel] logged in with a new code');
+  return products;
+}
+
+function accountsFromProducts(products: CustomerProducts): { executivePolicies: string[]; children: ChildAccountRef[] } {
   const executivePolicies = Object.values(products.topicsList ?? {})
     .flat()
     .filter((t) => t.url.includes('/executives/') && t.policySubjectId)
@@ -418,11 +459,15 @@ export function fetchHarelSnapshot(getCode: HarelCodeSource = codeFromGmail): Pr
   running ??= (async () => {
     const config = getConfig();
     const browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ locale: 'he-IL', timezoneId: FAMILY_TIMEZONE });
+    const context = await browser.newContext({
+      locale: 'he-IL',
+      timezoneId: FAMILY_TIMEZONE,
+      storageState: existsSync(SESSION_FILE) ? SESSION_FILE : undefined,
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(45_000);
     try {
-      const { executivePolicies, children } = await login(page, config, getCode);
+      const { executivePolicies, children } = accountsFromProducts(await openPersonalArea(page, config, getCode));
       const accounts = [
         ...(await Promise.all(executivePolicies.map((p) => fetchExecutivePolicy(page, p)))),
         ...(await fetchFundAccounts(page)),
@@ -434,6 +479,7 @@ export function fetchHarelSnapshot(getCode: HarelCodeSource = codeFromGmail): Pr
         accounts,
       };
       saveSnapshot(snapshot);
+      await saveSession(context);
       return snapshot;
     } catch (err) {
       mkdirSync(SNAPSHOT_DIR, { recursive: true });
@@ -447,6 +493,82 @@ export function fetchHarelSnapshot(getCode: HarelCodeSource = codeFromGmail): Pr
     running = null;
   });
   return running;
+}
+
+// ---------- saved session ----------
+
+interface SessionMeta {
+  loggedInAt: string;
+  lastAliveAt: string;
+}
+
+function readSessionMeta(): SessionMeta | null {
+  try {
+    return JSON.parse(readFileSync(SESSION_META_FILE, 'utf8')) as SessionMeta;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionMeta(meta: SessionMeta): void {
+  mkdirSync(SNAPSHOT_DIR, { recursive: true });
+  writeFileSync(SESSION_META_FILE, JSON.stringify(meta));
+}
+
+async function saveSession(context: BrowserContext): Promise<void> {
+  mkdirSync(SNAPSHOT_DIR, { recursive: true });
+  await context.storageState({ path: SESSION_FILE });
+  chmodSync(SESSION_FILE, 0o600); // it's a live login to the user's savings
+  const meta = readSessionMeta();
+  if (meta) writeSessionMeta({ ...meta, lastAliveAt: new Date().toISOString() });
+}
+
+function noteSessionExpired(reason: string): void {
+  const meta = readSessionMeta();
+  const hours = meta ? ((Date.now() - new Date(meta.loggedInAt).getTime()) / 3_600_000).toFixed(1) : '?';
+  console.log(`[harel] saved session no longer valid after ${hours}h (last seen alive ${meta?.lastAliveAt ?? '?'}): ${reason}`);
+  // How long sessions survive is Harel's call and undocumented; keep a record to tune the keep-alive.
+  appendFileSync(
+    join(SNAPSHOT_DIR, 'session-log.jsonl'),
+    JSON.stringify({ expiredSeenAt: new Date().toISOString(), loggedInAt: meta?.loggedInAt, lastAliveAt: meta?.lastAliveAt, reason }) + '\n',
+  );
+  rmSync(SESSION_FILE, { force: true });
+}
+
+export function getHarelSessionStatus(): { saved: boolean; loggedInAt: string | null; lastAliveAt: string | null } {
+  const meta = readSessionMeta();
+  return { saved: existsSync(SESSION_FILE), loggedInAt: meta?.loggedInAt ?? null, lastAliveAt: meta?.lastAliveAt ?? null };
+}
+
+// Touches the personal area with the saved cookies (no browser, no login) so the session
+// doesn't idle out. Drops the session when Harel redirects to the login page.
+export async function keepHarelSessionAlive(): Promise<boolean> {
+  if (running || !existsSync(SESSION_FILE)) return false;
+  const ctx = await request.newContext({ storageState: SESSION_FILE });
+  try {
+    const res = await ctx.get(CLIENT_VIEW_URL, { maxRedirects: 0, failOnStatusCode: false });
+    const location = res.headers()['location'] ?? '';
+    const alive = res.status() === 200 && !(await res.text()).includes('login-page/Login.aspx');
+    if (!alive) {
+      noteSessionExpired(`keep-alive got ${res.status()}${location ? ` → ${location}` : ''}`);
+      return false;
+    }
+    if (running) return true; // a run started meanwhile; it saves the session itself
+    await ctx.storageState({ path: SESSION_FILE });
+    chmodSync(SESSION_FILE, 0o600);
+    const meta = readSessionMeta();
+    if (meta) writeSessionMeta({ ...meta, lastAliveAt: new Date().toISOString() });
+    return true;
+  } finally {
+    await ctx.dispose();
+  }
+}
+
+export function startHarelKeepAlive(intervalMinutes = Number(process.env.HAREL_KEEPALIVE_MINUTES ?? 20)): void {
+  if (!intervalMinutes) return;
+  setInterval(() => {
+    keepHarelSessionAlive().catch((err) => console.error('[harel] keep-alive failed:', err));
+  }, intervalMinutes * 60_000);
 }
 
 // ---------- snapshots on disk ----------

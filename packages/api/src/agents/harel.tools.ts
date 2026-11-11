@@ -31,7 +31,7 @@ export const harelToolDefinitions: FunctionDeclaration[] = [
   {
     name: 'checkHarelSavings',
     description:
-      "The user's long-term savings at Harel (הראל): ביטוח מנהלים, קרנות השתלמות, קופות גמל, גמל להשקעה, plus the kids' (Aviv, Gal) גמל להשקעה accounts the user manages as guardian — balances, year-to-date returns and gains, management fees, and whether the monthly employer deposits arrived. Use for questions like 'how are my savings / pension / keren hishtalmut doing', 'did my employer deposit this month'. Reuses a snapshot from the last 12 hours; otherwise logs in to Harel (takes about a minute, the login code is read from email automatically).",
+      "The user's long-term savings at Harel (הראל): ביטוח מנהלים, קרנות השתלמות, קופות גמל, גמל להשקעה, plus the kids' (Aviv, Gal) גמל להשקעה accounts the user manages as guardian — balances, year-to-date returns and gains, management fees, and whether the monthly employer deposits arrived. Use for questions like 'how are my savings / pension / keren hishtalmut doing', 'did my employer deposit this month'. Reuses a snapshot from the last 12 hours unless refresh is set. A refresh reuses the saved Harel session when it's still alive (no login, ~30s); only an expired session needs a new login (the code is read from email automatically, about a minute).",
     parametersJsonSchema: {
       type: 'object' as const,
       properties: {
